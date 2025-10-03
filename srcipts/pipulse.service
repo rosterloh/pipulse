@@ -1,0 +1,14 @@
+[Unit]
+Description=PiPulse — Raspberry Pi OLED Status
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/pipulse
+Restart=on-failure
+# Give access to spidev and GPIO
+AmbientCapabilities=CAP_SYS_RAWIO
+
+[Install]
+WantedBy=multi-user.target

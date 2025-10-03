@@ -1,0 +1,10 @@
+{
+  "cSpell.language": "en_GB",
+  "rust-analyzer.cargo.allTargets": false,
+  "[rust]": {
+    "editor.formatOnSave": true
+  },
+  // helps remove rust-analyser errors due to requiring a feature flag and target
+  "rust-analyzer.cargo.features": [], 
+  "rust-analyzer.cargo.target": "aarch64-unknown-linux-gnu"
+}
