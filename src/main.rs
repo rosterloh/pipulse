@@ -2,7 +2,7 @@ use std::{fs, time::Instant};
 
 // use display_interface_spi::SPIInterfaceNoCS;
 use embedded_graphics::{
-    mono_font::{ascii::{FONT_6X10, FONT_8X13}, MonoTextStyle},
+    mono_font::{ascii::{FONT_8X13, FONT_10X20}, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
     text::{Alignment, Text}
@@ -103,15 +103,29 @@ fn main() -> Result<(), AppError> {
     // dc.export().map_err(|_| AppError::Gpio)?;
     // dc.set_direction(linux_embedded_hal::sysfs_gpio::Direction::Out).map_err(|_| AppError::Gpio)?;
 
-    let big = MonoTextStyle::new(&FONT_8X13, Rgb565::WHITE);
-    let small = MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE);
+    let big = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+    let big_char_w = 10;
+    let big_char_h = 20;
+    let small = MonoTextStyle::new(&FONT_8X13, Rgb565::WHITE);
+    let _small_char_w = 8;
+    let small_char_h = 13;
 
     // Clear the display initially
     display.clear(Rgb565::BLACK).map_err(|_| AppError::Display)?;
 
+    // Title
+    let header_text = "PiPulse";
+    let header_x = (W / 2) - ((header_text.len() * big_char_w as usize) as i32 / 2);
+    Text::with_alignment(
+        header_text,
+        Point::new(header_x, big_char_h),
+        big,
+        Alignment::Center,
+    ).draw(&mut display).map_err(|_| AppError::Display)?;
+
     // Turn on backlight
-    backlight.set_high();
-    // backlight.set_pwm_frequency(50., 1.)?;
+    // backlight.set_high();
+    backlight.set_pwm_frequency(50., 0.5).map_err(|_| AppError::Gpio)?;
 
     let _start = Instant::now();
     // let mut last = Instant::now();
@@ -132,20 +146,12 @@ fn main() -> Result<(), AppError> {
         let ip = get_ipv4();
         let load = get_loadavg();
 
-        // Title
-        Text::with_alignment(
-            "PiPulse",
-            Point::new(64, 12),
-            big,
-            Alignment::Center,
-        ).draw(&mut display).map_err(|_| AppError::Display)?;
-
         // IP line
-        Text::new(&format!("IP : {}", ip), Point::new(0, 30), small)
+        Text::new(&format!("IP : {}", ip), Point::new(0, big_char_h + small_char_h), small)
             .draw(&mut display).map_err(|_| AppError::Display)?;
 
         // Load line
-        Text::new(&format!("Load: {}", load), Point::new(0, 46), small)
+        Text::new(&format!("Load: {}", load), Point::new(0, big_char_h + small_char_h * 2), small)
             .draw(&mut display).map_err(|_| AppError::Display)?;
 
         // display.flush().map_err(|_| AppError::Display)?;
