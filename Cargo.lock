@@ -767,6 +767,7 @@ dependencies = [
  "embedded-graphics-simulator",
  "embedded-hal",
  "get_if_addrs",
+ "libc",
  "linux-embedded-hal",
  "mipidsi",
  "mousefood",

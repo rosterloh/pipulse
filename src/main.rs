@@ -31,10 +31,17 @@ fn run_hw() -> Result<(), AppError> {
     let mut display = display::hw::init()?;
     let backend = EmbeddedBackend::new(&mut display, EmbeddedBackendConfig::default());
     let mut terminal = Terminal::new(backend).unwrap();
+    let mut cpu = metrics::CpuCollector::new();
 
     loop {
         let state = ui::AppState {
             ip: metrics::get_ipv4(),
+            hostname: metrics::get_hostname(),
+            cpu_pct: cpu.sample(),
+            mem_pct: metrics::get_memory_percent(),
+            disk_pct: metrics::get_disk_percent(),
+            temp: metrics::get_cpu_temp(),
+            uptime: metrics::get_uptime_str(),
             load: metrics::get_loadavg(),
         };
         ui::render(&mut terminal, &state);
@@ -47,6 +54,7 @@ fn run_sim() {
     use embedded_graphics_simulator::SimulatorEvent;
 
     let mut setup = display::sim::init();
+    let mut cpu = metrics::CpuCollector::new();
 
     loop {
         {
@@ -54,6 +62,12 @@ fn run_sim() {
             let mut terminal = Terminal::new(backend).unwrap();
             let state = ui::AppState {
                 ip: metrics::get_ipv4(),
+                hostname: metrics::get_hostname(),
+                cpu_pct: cpu.sample(),
+                mem_pct: metrics::get_memory_percent(),
+                disk_pct: metrics::get_disk_percent(),
+                temp: metrics::get_cpu_temp(),
+                uptime: metrics::get_uptime_str(),
                 load: metrics::get_loadavg(),
             };
             ui::render(&mut terminal, &state);
