@@ -13,7 +13,7 @@ pub fn init() -> SimSetup {
     let display = SimulatorDisplay::<Rgb565>::new(Size::new(W, H));
 
     let output_settings = OutputSettingsBuilder::new()
-        .scale(3)
+        //.scale(3)
         .pixel_spacing(1)
         .build();
 
