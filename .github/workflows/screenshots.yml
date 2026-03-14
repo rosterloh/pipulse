@@ -1,0 +1,59 @@
+name: Screenshots
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: before
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: after
+
+      - name: Install SDL2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev
+
+      - name: Before screenshot
+        working-directory: before
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: EG_SIMULATOR_DUMP=/tmp/before.png cargo run --no-default-features --features sim,ci
+
+      - name: After screenshot
+        working-directory: after
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: EG_SIMULATOR_DUMP=/tmp/after.png cargo run --no-default-features --features sim,ci
+
+      - name: Upload screenshots
+        id: upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: /tmp/*.png
+
+      - name: Post PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --body "## Display Preview
+
+          | Before | After |
+          |--------|-------|
+          | ![Before Screenshot](${{ steps.upload-artifacts.outputs.artifact-url }}/before.png) | ![After Screenshot](${{ steps.upload-artifacts.outputs.artifact-url }}/after.png) |"

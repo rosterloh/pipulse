@@ -1,16 +1,18 @@
 use linux_embedded_hal::{
+    CdevPin, Delay, SpidevDevice,
     gpio_cdev::{Chip, LineRequestFlags},
     spidev::{SpiModeFlags, SpidevOptions},
-    CdevPin, Delay, SpidevDevice,
 };
-use mipidsi::{interface::SpiInterface, models::ST7789, options::ColorInversion, Builder, NoResetPin};
+use mipidsi::{
+    Builder, NoResetPin, interface::SpiInterface, models::ST7789, options::ColorInversion,
+};
 
 use crate::AppError;
 
-const SPI_DC: u32    = 25;
+const SPI_DC: u32 = 25;
 const BACKLIGHT: u32 = 22;
-pub const W: u16     = 240;
-pub const H: u16     = 240;
+pub const W: u16 = 240;
+pub const H: u16 = 240;
 
 type HwDisplay = mipidsi::Display<SpiInterface<'static, SpidevDevice, CdevPin>, ST7789, NoResetPin>;
 
