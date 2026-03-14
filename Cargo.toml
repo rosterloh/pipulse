@@ -22,6 +22,7 @@ start = true
 default = ["hw"]
 hw  = []
 sim = ["dep:embedded-graphics-simulator"]
+ci  = []
 
 [dependencies]
 embedded-graphics    = "0.8"

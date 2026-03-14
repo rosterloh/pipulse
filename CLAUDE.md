@@ -15,8 +15,8 @@ cargo build --release                        # hw (default)
 # Run the simulator locally (requires SDL2: sudo apt install libsdl2-dev)
 cargo run --no-default-features --features sim
 
-# Headless PNG snapshot (no SDL2 window, useful for CI)
-EG_SIMULATOR_DUMP=/tmp/pipulse.png cargo run --no-default-features --features sim
+# Headless PNG snapshot — single frame then exits (used in CI)
+EG_SIMULATOR_DUMP=/tmp/pipulse.png cargo run --no-default-features --features "sim,ci"
 
 # Lint
 cargo clippy
@@ -59,8 +59,9 @@ The `.deb` installs:
 |---|---|---|
 | `hw` | yes | Enables `src/display/hw.rs` — real SPI/GPIO hardware path |
 | `sim` | no | Enables `src/display/sim.rs` — SDL2 simulator window |
+| `ci` | no | When combined with `sim`, exits after the first frame (used for headless PNG snapshots in CI) |
 
-`hw` and `sim` are mutually exclusive at runtime (main.rs dispatches via `#[cfg]`). Always pass `--no-default-features` when enabling `sim`.
+`hw` and `sim` are mutually exclusive at runtime (main.rs dispatches via `#[cfg]`). Always pass `--no-default-features` when enabling `sim`. Combine `ci` with `sim` for CI screenshot dumps: `--no-default-features --features "sim,ci"`.
 
 ## Architecture
 
