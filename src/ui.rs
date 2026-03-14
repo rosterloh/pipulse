@@ -10,6 +10,7 @@ use ratatui::{
 
 pub struct AppState {
     pub ip: String,
+    pub iface: String,
     pub hostname: String,
     pub cpu_pct: u8,
     pub mem_pct: u8,
@@ -75,10 +76,10 @@ pub fn render<B: Backend>(terminal: &mut Terminal<B>, state: &AppState) {
                     Constraint::Length(1), // [4] spacer
                     Constraint::Length(1), // [5] Disk
                     Constraint::Length(1), // [6] divider
-                    Constraint::Length(1), // [7] IP
-                    Constraint::Length(1), // [8] Temp
-                    Constraint::Length(1), // [9] Uptime
-                    Constraint::Length(1), // [10] Load
+                    Constraint::Length(2), // [7] IP
+                    Constraint::Length(2), // [8] Temp
+                    Constraint::Length(2), // [9] Uptime
+                    Constraint::Length(2), // [10] Load
                     Constraint::Min(0),
                 ])
                 .split(frame.area());
@@ -105,12 +106,16 @@ pub fn render<B: Backend>(terminal: &mut Terminal<B>, state: &AppState) {
                 rows[6],
             );
 
+            // Leading spaces leave room for the embedded-icon drawn in main.rs
             frame.render_widget(
-                Paragraph::new(state.ip.as_str()).style(Style::default().fg(Color::White)),
+                Paragraph::new(format!("   {}", state.ip))
+                    .style(Style::default().fg(Color::White)),
                 rows[7],
             );
 
-            let temp_str = state.temp.map_or("--".into(), |t| format!("{t:.1}\u{00b0}C"));
+            let temp_str = state
+                .temp
+                .map_or("   --".into(), |t| format!("   {t:.1}\u{00b0}C"));
             let temp_col = state.temp.map_or(Color::Gray, temp_color);
             frame.render_widget(
                 Paragraph::new(temp_str).style(Style::default().fg(temp_col)),
@@ -118,13 +123,13 @@ pub fn render<B: Backend>(terminal: &mut Terminal<B>, state: &AppState) {
             );
 
             frame.render_widget(
-                Paragraph::new(format!("Up  {}", state.uptime))
+                Paragraph::new(format!("   {}", state.uptime))
                     .style(Style::default().fg(Color::Gray)),
                 rows[9],
             );
 
             frame.render_widget(
-                Paragraph::new(format!("Ld  {}", state.load))
+                Paragraph::new(format!("   {}", state.load))
                     .style(Style::default().fg(Color::Gray)),
                 rows[10],
             );

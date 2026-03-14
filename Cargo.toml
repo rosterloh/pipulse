@@ -26,6 +26,7 @@ sim = ["dep:embedded-graphics-simulator"]
 [dependencies]
 embedded-graphics    = "0.8"
 embedded-hal         = "1.0.0"
+embedded-icon        = { version = "0.3", features = ["mdi"] }
 linux-embedded-hal   = "0.4"
 get_if_addrs         = "0.5"
 thiserror            = "2.0"
