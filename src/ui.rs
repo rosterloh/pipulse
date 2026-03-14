@@ -76,10 +76,10 @@ pub fn render<B: Backend>(terminal: &mut Terminal<B>, state: &AppState) {
                     Constraint::Length(1), // [4] spacer
                     Constraint::Length(1), // [5] Disk
                     Constraint::Length(1), // [6] divider
-                    Constraint::Length(1), // [7] IP
-                    Constraint::Length(1), // [8] Temp
-                    Constraint::Length(1), // [9] Uptime
-                    Constraint::Length(1), // [10] Load
+                    Constraint::Length(2), // [7] IP
+                    Constraint::Length(2), // [8] Temp
+                    Constraint::Length(2), // [9] Uptime
+                    Constraint::Length(2), // [10] Load
                     Constraint::Min(0),
                 ])
                 .split(frame.area());
@@ -106,40 +106,30 @@ pub fn render<B: Backend>(terminal: &mut Terminal<B>, state: &AppState) {
                 rows[6],
             );
 
-            // ≈ for wireless (wlan*), # for wired (eth*), ○ for other
-            let net_icon = if state.iface.starts_with("wlan") {
-                "\u{2248}"
-            } else if state.iface.starts_with("eth") {
-                "#"
-            } else {
-                "\u{25CB}"
-            };
+            // Leading spaces leave room for the embedded-icon drawn in main.rs
             frame.render_widget(
-                Paragraph::new(format!("{net_icon}  {}", state.ip))
+                Paragraph::new(format!("   {}", state.ip))
                     .style(Style::default().fg(Color::White)),
                 rows[7],
             );
 
-            // ▲ thermometer-like icon for temperature
             let temp_str = state
                 .temp
-                .map_or("\u{25B2} --".into(), |t| format!("\u{25B2} {t:.1}\u{00b0}C"));
+                .map_or("   --".into(), |t| format!("   {t:.1}\u{00b0}C"));
             let temp_col = state.temp.map_or(Color::Gray, temp_color);
             frame.render_widget(
                 Paragraph::new(temp_str).style(Style::default().fg(temp_col)),
                 rows[8],
             );
 
-            // ↑ upward arrow for uptime
             frame.render_widget(
-                Paragraph::new(format!("\u{2191}  {}", state.uptime))
+                Paragraph::new(format!("   {}", state.uptime))
                     .style(Style::default().fg(Color::Gray)),
                 rows[9],
             );
 
-            // ≡ three-bar icon for load average
             frame.render_widget(
-                Paragraph::new(format!("\u{2261}  {}", state.load))
+                Paragraph::new(format!("   {}", state.load))
                     .style(Style::default().fg(Color::Gray)),
                 rows[10],
             );

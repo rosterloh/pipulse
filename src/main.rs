@@ -3,6 +3,8 @@ mod metrics;
 mod ui;
 
 use std::time::Duration;
+use embedded_graphics::{image::Image, pixelcolor::Rgb565, prelude::*};
+use embedded_icon::mdi::size18px::{ClockOutline, Ethernet, Network, Server, Thermometer, Wifi};
 use mousefood::prelude::*;
 use thiserror::Error;
 
@@ -14,6 +16,59 @@ pub enum AppError {
     Spi,
     #[error("Display error")]
     Display,
+}
+
+/// Height of one character row in pixels (matches mousefood's default font).
+const CHAR_H: i32 = 10;
+
+/// Draw embedded-icon MDI icons at the pixel positions of rows 7-10.
+///
+/// Must be called *after* `terminal.draw()` has completed and the display
+/// borrow has been released, so that the icons overwrite the leading spaces
+/// that Ratatui filled with background colour.
+fn draw_icons<D>(display: &mut D, state: &ui::AppState)
+where
+    D: DrawTarget<Color = Rgb565>,
+{
+    // Rows 0-6 each occupy CHAR_H pixels.  Rows 7-10 are 2*CHAR_H each.
+    let base_y = 7 * CHAR_H;
+    let row_h  = 2 * CHAR_H;
+    let icon_h = 18_i32;
+    let offset = (row_h - icon_h) / 2; // vertical centering within 2-char row
+
+    let white = Rgb565::WHITE;
+    let gray  = Rgb565::new(15, 30, 15);
+
+    // Row 7 — network icon varies by interface type
+    let y0 = base_y + offset;
+    if state.iface.starts_with("wlan") {
+        Image::new(&Wifi::new(white), Point::new(0, y0)).draw(display).ok();
+    } else if state.iface.starts_with("eth") {
+        Image::new(&Ethernet::new(white), Point::new(0, y0)).draw(display).ok();
+    } else {
+        Image::new(&Network::new(white), Point::new(0, y0)).draw(display).ok();
+    }
+
+    // Row 8 — thermometer, colour-coded like the text
+    let y1 = base_y + row_h + offset;
+    let temp_col = state.temp.map_or(gray, |t| {
+        if t >= 70.0 {
+            Rgb565::new(26, 22, 10) // ~(210, 90, 80)
+        } else if t >= 55.0 {
+            Rgb565::new(26, 42, 8)  // ~(210, 170, 70)
+        } else {
+            Rgb565::new(12, 46, 12) // ~(100, 185, 100)
+        }
+    });
+    Image::new(&Thermometer::new(temp_col), Point::new(0, y1)).draw(display).ok();
+
+    // Row 9 — clock for uptime
+    let y2 = base_y + 2 * row_h + offset;
+    Image::new(&ClockOutline::new(gray), Point::new(0, y2)).draw(display).ok();
+
+    // Row 10 — server icon for load average
+    let y3 = base_y + 3 * row_h + offset;
+    Image::new(&Server::new(gray), Point::new(0, y3)).draw(display).ok();
 }
 
 fn main() -> Result<(), AppError> {
@@ -29,8 +84,6 @@ fn main() -> Result<(), AppError> {
 #[cfg(all(feature = "hw", not(feature = "sim")))]
 fn run_hw() -> Result<(), AppError> {
     let mut display = display::hw::init()?;
-    let backend = EmbeddedBackend::new(&mut display, EmbeddedBackendConfig::default());
-    let mut terminal = Terminal::new(backend).unwrap();
     let mut cpu = metrics::CpuCollector::new();
 
     loop {
@@ -46,7 +99,17 @@ fn run_hw() -> Result<(), AppError> {
             uptime: metrics::get_uptime_str(),
             load: metrics::get_loadavg(),
         };
-        ui::render(&mut terminal, &state);
+
+        {
+            // Terminal is scoped so the mutable borrow of `display` is
+            // released before we draw icons directly onto it.
+            let backend = EmbeddedBackend::new(&mut display, EmbeddedBackendConfig::default());
+            let mut terminal = Terminal::new(backend).unwrap();
+            ui::render(&mut terminal, &state);
+        }
+
+        draw_icons(&mut display, &state);
+
         std::thread::sleep(Duration::from_secs(1));
     }
 }
@@ -59,23 +122,26 @@ fn run_sim() {
     let mut cpu = metrics::CpuCollector::new();
 
     loop {
+        let (ip, iface) = metrics::get_net_info();
+        let state = ui::AppState {
+            ip,
+            iface,
+            hostname: metrics::get_hostname(),
+            cpu_pct: cpu.sample(),
+            mem_pct: metrics::get_memory_percent(),
+            disk_pct: metrics::get_disk_percent(),
+            temp: metrics::get_cpu_temp(),
+            uptime: metrics::get_uptime_str(),
+            load: metrics::get_loadavg(),
+        };
+
         {
             let backend = EmbeddedBackend::new(&mut setup.display, EmbeddedBackendConfig::default());
             let mut terminal = Terminal::new(backend).unwrap();
-            let (ip, iface) = metrics::get_net_info();
-            let state = ui::AppState {
-                ip,
-                iface,
-                hostname: metrics::get_hostname(),
-                cpu_pct: cpu.sample(),
-                mem_pct: metrics::get_memory_percent(),
-                disk_pct: metrics::get_disk_percent(),
-                temp: metrics::get_cpu_temp(),
-                uptime: metrics::get_uptime_str(),
-                load: metrics::get_loadavg(),
-            };
             ui::render(&mut terminal, &state);
         }
+
+        draw_icons(&mut setup.display, &state);
 
         setup.window.update(&setup.display);
 
