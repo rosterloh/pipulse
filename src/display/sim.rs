@@ -12,12 +12,9 @@ pub struct SimSetup {
 pub fn init() -> SimSetup {
     let display = SimulatorDisplay::<Rgb565>::new(Size::new(W, H));
 
-    let output_settings = OutputSettingsBuilder::new()
-        //.scale(3)
-        .pixel_spacing(1)
-        .build();
+    let output_settings = OutputSettingsBuilder::new().build();
 
-    let window = Window::new("PiPulse — Simulator", &output_settings);
+    let window = Window::new("PiPulse - Simulator", &output_settings);
 
     SimSetup { display, window }
 }

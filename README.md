@@ -44,7 +44,7 @@ sudo apt install libsdl2-dev
 cargo run --no-default-features --features sim
 
 # Headless PNG snapshot (CI-friendly)
-EG_SIMULATOR_DUMP=/tmp/pipulse.png cargo run --no-default-features --features sim
+EG_SIMULATOR_DUMP=/tmp/pipulse.png cargo run --no-default-features --features sim,ci
 
 # Build release binary
 cargo build --release

@@ -1,11 +1,10 @@
 use ratatui::{
-    Frame,
+    Frame, Terminal,
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Gauge, Paragraph},
-    Terminal,
 };
 
 pub struct AppState {
@@ -47,8 +46,7 @@ fn render_gauge_row(frame: &mut Frame<'_>, area: Rect, label: &str, pct: u8, war
         .constraints([Constraint::Length(9), Constraint::Min(0)])
         .split(area);
     frame.render_widget(
-        Paragraph::new(format!("{:<3} {:>3}%", label, pct))
-            .style(Style::default().fg(color)),
+        Paragraph::new(format!("{:<3} {:>3}%", label, pct)).style(Style::default().fg(color)),
         cols[0],
     );
     frame.render_widget(
@@ -108,14 +106,14 @@ pub fn render<B: Backend>(terminal: &mut Terminal<B>, state: &AppState) {
 
             // Leading spaces leave room for the embedded-icon drawn in main.rs
             frame.render_widget(
-                Paragraph::new(format!("   {}", state.ip))
+                Paragraph::new(format!("    {}", state.ip))
                     .style(Style::default().fg(Color::White)),
                 rows[7],
             );
 
             let temp_str = state
                 .temp
-                .map_or("   --".into(), |t| format!("   {t:.1}\u{00b0}C"));
+                .map_or("    --".into(), |t| format!("    {t:.1}\u{00b0}C"));
             let temp_col = state.temp.map_or(Color::Gray, temp_color);
             frame.render_widget(
                 Paragraph::new(temp_str).style(Style::default().fg(temp_col)),
@@ -123,13 +121,13 @@ pub fn render<B: Backend>(terminal: &mut Terminal<B>, state: &AppState) {
             );
 
             frame.render_widget(
-                Paragraph::new(format!("   {}", state.uptime))
+                Paragraph::new(format!("    {}", state.uptime))
                     .style(Style::default().fg(Color::Gray)),
                 rows[9],
             );
 
             frame.render_widget(
-                Paragraph::new(format!("   {}", state.load))
+                Paragraph::new(format!("    {}", state.load))
                     .style(Style::default().fg(Color::Gray)),
                 rows[10],
             );

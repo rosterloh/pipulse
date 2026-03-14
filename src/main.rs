@@ -2,10 +2,14 @@ mod display;
 mod metrics;
 mod ui;
 
-use std::time::Duration;
 use embedded_graphics::{image::Image, pixelcolor::Rgb565, prelude::*};
-use embedded_icon::mdi::size18px::{ClockOutline, Ethernet, Network, Server, Thermometer, Wifi};
+use embedded_icon::{
+    NewIcon,
+    mdi::size18px::{ClockOutline, Ethernet, Network, Server, Thermometer, Wifi},
+};
 use mousefood::prelude::*;
+use ratatui::Terminal;
+use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -30,23 +34,29 @@ fn draw_icons<D>(display: &mut D, state: &ui::AppState)
 where
     D: DrawTarget<Color = Rgb565>,
 {
-    // Rows 0-6 each occupy CHAR_H pixels.  Rows 7-10 are 2*CHAR_H each.
+    // Rows 0-6 each occupy CHAR_H pixels. Rows 7-10 are 2*CHAR_H each.
     let base_y = 7 * CHAR_H;
-    let row_h  = 2 * CHAR_H;
+    let row_h = 2 * CHAR_H;
     let icon_h = 18_i32;
     let offset = (row_h - icon_h) / 2; // vertical centering within 2-char row
 
     let white = Rgb565::WHITE;
-    let gray  = Rgb565::new(15, 30, 15);
+    let gray = Rgb565::new(15, 30, 15);
 
     // Row 7 — network icon varies by interface type
     let y0 = base_y + offset;
     if state.iface.starts_with("wlan") {
-        Image::new(&Wifi::new(white), Point::new(0, y0)).draw(display).ok();
+        Image::new(&Wifi::new(white), Point::new(0, y0))
+            .draw(display)
+            .ok();
     } else if state.iface.starts_with("eth") {
-        Image::new(&Ethernet::new(white), Point::new(0, y0)).draw(display).ok();
+        Image::new(&Ethernet::new(white), Point::new(0, y0))
+            .draw(display)
+            .ok();
     } else {
-        Image::new(&Network::new(white), Point::new(0, y0)).draw(display).ok();
+        Image::new(&Network::new(white), Point::new(0, y0))
+            .draw(display)
+            .ok();
     }
 
     // Row 8 — thermometer, colour-coded like the text
@@ -55,20 +65,26 @@ where
         if t >= 70.0 {
             Rgb565::new(26, 22, 10) // ~(210, 90, 80)
         } else if t >= 55.0 {
-            Rgb565::new(26, 42, 8)  // ~(210, 170, 70)
+            Rgb565::new(26, 42, 8) // ~(210, 170, 70)
         } else {
             Rgb565::new(12, 46, 12) // ~(100, 185, 100)
         }
     });
-    Image::new(&Thermometer::new(temp_col), Point::new(0, y1)).draw(display).ok();
+    Image::new(&Thermometer::new(temp_col), Point::new(0, y1))
+        .draw(display)
+        .ok();
 
     // Row 9 — clock for uptime
     let y2 = base_y + 2 * row_h + offset;
-    Image::new(&ClockOutline::new(gray), Point::new(0, y2)).draw(display).ok();
+    Image::new(&ClockOutline::new(gray), Point::new(0, y2))
+        .draw(display)
+        .ok();
 
     // Row 10 — server icon for load average
     let y3 = base_y + 3 * row_h + offset;
-    Image::new(&Server::new(gray), Point::new(0, y3)).draw(display).ok();
+    Image::new(&Server::new(gray), Point::new(0, y3))
+        .draw(display)
+        .ok();
 }
 
 fn main() -> Result<(), AppError> {
@@ -136,7 +152,8 @@ fn run_sim() {
         };
 
         {
-            let backend = EmbeddedBackend::new(&mut setup.display, EmbeddedBackendConfig::default());
+            let backend =
+                EmbeddedBackend::new(&mut setup.display, EmbeddedBackendConfig::default());
             let mut terminal = Terminal::new(backend).unwrap();
             ui::render(&mut terminal, &state);
         }
