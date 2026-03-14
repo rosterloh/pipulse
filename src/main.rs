@@ -75,6 +75,9 @@ fn run_sim() {
 
         setup.window.update(&setup.display);
 
+        #[cfg(feature = "ci")]
+        break;
+
         if setup.window.events().any(|e| e == SimulatorEvent::Quit) {
             break;
         }
