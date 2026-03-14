@@ -10,6 +10,7 @@ use ratatui::{
 
 pub struct AppState {
     pub ip: String,
+    pub iface: String,
     pub hostname: String,
     pub cpu_pct: u8,
     pub mem_pct: u8,
@@ -105,26 +106,40 @@ pub fn render<B: Backend>(terminal: &mut Terminal<B>, state: &AppState) {
                 rows[6],
             );
 
+            // ≈ for wireless (wlan*), # for wired (eth*), ○ for other
+            let net_icon = if state.iface.starts_with("wlan") {
+                "\u{2248}"
+            } else if state.iface.starts_with("eth") {
+                "#"
+            } else {
+                "\u{25CB}"
+            };
             frame.render_widget(
-                Paragraph::new(state.ip.as_str()).style(Style::default().fg(Color::White)),
+                Paragraph::new(format!("{net_icon}  {}", state.ip))
+                    .style(Style::default().fg(Color::White)),
                 rows[7],
             );
 
-            let temp_str = state.temp.map_or("--".into(), |t| format!("{t:.1}\u{00b0}C"));
+            // ▲ thermometer-like icon for temperature
+            let temp_str = state
+                .temp
+                .map_or("\u{25B2} --".into(), |t| format!("\u{25B2} {t:.1}\u{00b0}C"));
             let temp_col = state.temp.map_or(Color::Gray, temp_color);
             frame.render_widget(
                 Paragraph::new(temp_str).style(Style::default().fg(temp_col)),
                 rows[8],
             );
 
+            // ↑ upward arrow for uptime
             frame.render_widget(
-                Paragraph::new(format!("Up  {}", state.uptime))
+                Paragraph::new(format!("\u{2191}  {}", state.uptime))
                     .style(Style::default().fg(Color::Gray)),
                 rows[9],
             );
 
+            // ≡ three-bar icon for load average
             frame.render_widget(
-                Paragraph::new(format!("Ld  {}", state.load))
+                Paragraph::new(format!("\u{2261}  {}", state.load))
                     .style(Style::default().fg(Color::Gray)),
                 rows[10],
             );

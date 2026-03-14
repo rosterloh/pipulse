@@ -35,24 +35,33 @@ impl CpuCollector {
     }
 }
 
-pub fn get_ipv4() -> String {
+/// Returns `(ip_address, interface_name)` for the first non-virtual IPv4 interface.
+pub fn get_net_info() -> (String, String) {
     match get_if_addrs() {
-        Ok(addrs) => addrs
-            .into_iter()
-            .filter(|i| !i.is_loopback())
-            .filter_map(|i| match i.ip() {
-                IpAddr::V4(v4) => Some((i.name, v4)),
-                _ => None,
-            })
-            .find(|(name, _)| {
-                !name.starts_with("docker")
-                    && !name.starts_with("veth")
-                    && !name.starts_with("lo")
-            })
-            .map(|(_, ip)| ip.to_string())
-            .unwrap_or_else(|| "no ip".into()),
-        Err(_) => "no ip".into(),
+        Ok(addrs) => {
+            let result = addrs
+                .into_iter()
+                .filter(|i| !i.is_loopback())
+                .filter_map(|i| match i.ip() {
+                    IpAddr::V4(v4) => Some((i.name, v4)),
+                    _ => None,
+                })
+                .find(|(name, _)| {
+                    !name.starts_with("docker")
+                        && !name.starts_with("veth")
+                        && !name.starts_with("lo")
+                });
+            match result {
+                Some((iface, ip)) => (ip.to_string(), iface),
+                None => ("no ip".into(), String::new()),
+            }
+        }
+        Err(_) => ("no ip".into(), String::new()),
     }
+}
+
+pub fn get_ipv4() -> String {
+    get_net_info().0
 }
 
 pub fn get_loadavg() -> String {

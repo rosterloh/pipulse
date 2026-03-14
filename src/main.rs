@@ -34,8 +34,10 @@ fn run_hw() -> Result<(), AppError> {
     let mut cpu = metrics::CpuCollector::new();
 
     loop {
+        let (ip, iface) = metrics::get_net_info();
         let state = ui::AppState {
-            ip: metrics::get_ipv4(),
+            ip,
+            iface,
             hostname: metrics::get_hostname(),
             cpu_pct: cpu.sample(),
             mem_pct: metrics::get_memory_percent(),
@@ -60,8 +62,10 @@ fn run_sim() {
         {
             let backend = EmbeddedBackend::new(&mut setup.display, EmbeddedBackendConfig::default());
             let mut terminal = Terminal::new(backend).unwrap();
+            let (ip, iface) = metrics::get_net_info();
             let state = ui::AppState {
-                ip: metrics::get_ipv4(),
+                ip,
+                iface,
                 hostname: metrics::get_hostname(),
                 cpu_pct: cpu.sample(),
                 mem_pct: metrics::get_memory_percent(),
