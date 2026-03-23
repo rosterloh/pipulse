@@ -39,19 +39,22 @@ impl ButtonReader {
                 .map_err(|_| AppError::Gpio)?,
         )
         .map_err(|_| AppError::Gpio)?;
-        // Buttons are active-low; assume unpressed (high) at start.
+        // Buttons are active-low; initialize previous state from actual pin levels
+        // to avoid a spurious press event if a button is held at startup.
+        let prev_a = btn_a.is_high().map_err(|_| AppError::Gpio)?;
+        let prev_b = btn_b.is_high().map_err(|_| AppError::Gpio)?;
         Ok(Self {
             btn_a,
             btn_b,
-            prev_a: true,
-            prev_b: true,
+            prev_a,
+            prev_b,
         })
     }
 
     /// Returns an edge-triggered event on the falling edge (button pressed).
-    pub fn poll(&mut self) -> ButtonEvent {
-        let a = self.btn_a.is_high().unwrap_or(true);
-        let b = self.btn_b.is_high().unwrap_or(true);
+    pub fn poll(&mut self) -> Result<ButtonEvent, AppError> {
+        let a = self.btn_a.is_high().map_err(|_| AppError::Gpio)?;
+        let b = self.btn_b.is_high().map_err(|_| AppError::Gpio)?;
         let event = if !a && self.prev_a {
             ButtonEvent::Prev
         } else if !b && self.prev_b {
@@ -61,6 +64,6 @@ impl ButtonReader {
         };
         self.prev_a = a;
         self.prev_b = b;
-        event
+        Ok(event)
     }
 }

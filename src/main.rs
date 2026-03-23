@@ -110,7 +110,8 @@ fn main() -> Result<(), AppError> {
 fn run_hw() -> Result<(), AppError> {
     let mut display = display::hw::init()?;
     let mut cpu = metrics::CpuCollector::new();
-    let mut net = metrics::NetSampler::new();
+    let (_, iface) = metrics::get_net_info();
+    let mut net = metrics::NetSampler::new(&iface);
     let mut buttons = input::ButtonReader::new()?;
     let mut page = ui::Page::default();
     let mut rx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
@@ -118,7 +119,7 @@ fn run_hw() -> Result<(), AppError> {
 
     loop {
         // Handle button presses (edge-triggered, active-low)
-        match buttons.poll() {
+        match buttons.poll()? {
             input::ButtonEvent::Next => page = page.next(),
             input::ButtonEvent::Prev => page = page.prev(),
             input::ButtonEvent::None => {}
@@ -173,7 +174,8 @@ fn run_sim() {
 
     let mut setup = display::sim::init();
     let mut cpu = metrics::CpuCollector::new();
-    let mut net = metrics::NetSampler::new();
+    let (_, iface) = metrics::get_net_info();
+    let mut net = metrics::NetSampler::new(&iface);
     let mut page = ui::Page::default();
     let mut rx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
     let mut tx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);

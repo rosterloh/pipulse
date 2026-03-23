@@ -100,8 +100,8 @@ fn render_page_header(frame: &mut Frame<'_>, area: Rect, title: &str, page: Page
     let width = area.width as usize;
     let indicator = format!("{}/{}", page.index(), Page::COUNT);
     // Layout: "─ " (2) + title + " ─...─ " (1 + dashes + 2) + indicator
-    // Fixed characters (excluding variable dashes): 2 + title.len() + 3 + indicator.len()
-    let fixed = 2 + title.len() + 3 + indicator.len();
+    // Use char count (not byte length) so multi-byte UTF-8 characters are measured correctly.
+    let fixed = 2 + title.chars().count() + 3 + indicator.chars().count();
     let extra_dashes = width.saturating_sub(fixed);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
