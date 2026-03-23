@@ -1,5 +1,47 @@
 use sysinfo::{Components, Disks, Networks, System};
 
+pub struct NetSampler {
+    prev_rx: u64,
+    prev_tx: u64,
+}
+
+impl NetSampler {
+    pub fn new() -> Self {
+        let (rx, tx) = Self::total_bytes();
+        Self {
+            prev_rx: rx,
+            prev_tx: tx,
+        }
+    }
+
+    fn total_bytes() -> (u64, u64) {
+        let networks = Networks::new_with_refreshed_list();
+        let mut rx = 0u64;
+        let mut tx = 0u64;
+        for (iface, data) in &networks {
+            if iface.starts_with("lo")
+                || iface.starts_with("docker")
+                || iface.starts_with("veth")
+            {
+                continue;
+            }
+            rx += data.total_received();
+            tx += data.total_transmitted();
+        }
+        (rx, tx)
+    }
+
+    /// Returns `(rx_bytes_per_sec, tx_bytes_per_sec)` since last call.
+    pub fn sample(&mut self) -> (u64, u64) {
+        let (rx, tx) = Self::total_bytes();
+        let rx_delta = rx.saturating_sub(self.prev_rx);
+        let tx_delta = tx.saturating_sub(self.prev_tx);
+        self.prev_rx = rx;
+        self.prev_tx = tx;
+        (rx_delta, tx_delta)
+    }
+}
+
 pub struct CpuCollector {
     sys: System,
 }

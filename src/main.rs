@@ -1,7 +1,10 @@
 mod display;
+#[cfg(all(feature = "hw", not(feature = "sim")))]
+mod input;
 mod metrics;
 mod ui;
 
+use std::collections::VecDeque;
 use embedded_graphics::{image::Image, pixelcolor::Rgb565, prelude::*};
 use embedded_icon::{
     NewIcon,
@@ -25,11 +28,17 @@ pub enum AppError {
 /// Height of one character row in pixels (matches mousefood's default font).
 const CHAR_H: i32 = 10;
 
+/// Number of network samples kept in history for the sparkline graphs.
+const HISTORY_LEN: usize = 40;
+
 /// Draw embedded-icon MDI icons at the pixel positions of rows 7-10.
 ///
 /// Must be called *after* `terminal.draw()` has completed and the display
 /// borrow has been released, so that the icons overwrite the leading spaces
 /// that Ratatui filled with background colour.
+///
+/// Only call this on the Overview page — the icon positions are baked into
+/// that layout.
 fn draw_icons<D>(display: &mut D, state: &ui::AppState)
 where
     D: DrawTarget<Color = Rgb565>,
@@ -101,8 +110,31 @@ fn main() -> Result<(), AppError> {
 fn run_hw() -> Result<(), AppError> {
     let mut display = display::hw::init()?;
     let mut cpu = metrics::CpuCollector::new();
+    let mut net = metrics::NetSampler::new();
+    let mut buttons = input::ButtonReader::new()?;
+    let mut page = ui::Page::default();
+    let mut rx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
+    let mut tx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
 
     loop {
+        // Handle button presses (edge-triggered, active-low)
+        match buttons.poll() {
+            input::ButtonEvent::Next => page = page.next(),
+            input::ButtonEvent::Prev => page = page.prev(),
+            input::ButtonEvent::None => {}
+        }
+
+        // Update network history ring buffers
+        let (rx, tx) = net.sample();
+        if rx_history.len() >= HISTORY_LEN {
+            rx_history.pop_front();
+        }
+        rx_history.push_back(rx);
+        if tx_history.len() >= HISTORY_LEN {
+            tx_history.pop_front();
+        }
+        tx_history.push_back(tx);
+
         let (ip, iface) = metrics::get_net_info();
         let state = ui::AppState {
             ip,
@@ -114,6 +146,9 @@ fn run_hw() -> Result<(), AppError> {
             temp: metrics::get_cpu_temp(),
             uptime: metrics::get_uptime_str(),
             load: metrics::get_loadavg(),
+            page,
+            rx_history: rx_history.clone(),
+            tx_history: tx_history.clone(),
         };
 
         {
@@ -124,7 +159,9 @@ fn run_hw() -> Result<(), AppError> {
             ui::render(&mut terminal, &state);
         }
 
-        draw_icons(&mut display, &state);
+        if state.page == ui::Page::Overview {
+            draw_icons(&mut display, &state);
+        }
 
         std::thread::sleep(Duration::from_secs(1));
     }
@@ -136,8 +173,23 @@ fn run_sim() {
 
     let mut setup = display::sim::init();
     let mut cpu = metrics::CpuCollector::new();
+    let mut net = metrics::NetSampler::new();
+    let mut page = ui::Page::default();
+    let mut rx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
+    let mut tx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
 
     loop {
+        // Update network history ring buffers
+        let (rx, tx) = net.sample();
+        if rx_history.len() >= HISTORY_LEN {
+            rx_history.pop_front();
+        }
+        rx_history.push_back(rx);
+        if tx_history.len() >= HISTORY_LEN {
+            tx_history.pop_front();
+        }
+        tx_history.push_back(tx);
+
         let (ip, iface) = metrics::get_net_info();
         let state = ui::AppState {
             ip,
@@ -149,6 +201,9 @@ fn run_sim() {
             temp: metrics::get_cpu_temp(),
             uptime: metrics::get_uptime_str(),
             load: metrics::get_loadavg(),
+            page,
+            rx_history: rx_history.clone(),
+            tx_history: tx_history.clone(),
         };
 
         {
@@ -158,14 +213,31 @@ fn run_sim() {
             ui::render(&mut terminal, &state);
         }
 
-        draw_icons(&mut setup.display, &state);
+        if state.page == ui::Page::Overview {
+            draw_icons(&mut setup.display, &state);
+        }
 
         setup.window.update(&setup.display);
 
         #[cfg(feature = "ci")]
         break;
 
-        if setup.window.events().any(|e| e == SimulatorEvent::Quit) {
+        let mut should_quit = false;
+        for event in setup.window.events() {
+            match event {
+                SimulatorEvent::Quit => should_quit = true,
+                SimulatorEvent::KeyDown { keycode, .. } => {
+                    use embedded_graphics_simulator::sdl2::keyboard::Keycode;
+                    match keycode {
+                        Keycode::Right | Keycode::D => page = page.next(),
+                        Keycode::Left | Keycode::A => page = page.prev(),
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        if should_quit {
             break;
         }
 
