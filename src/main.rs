@@ -4,7 +4,6 @@ mod input;
 mod metrics;
 mod ui;
 
-use std::collections::VecDeque;
 use embedded_graphics::{image::Image, pixelcolor::Rgb565, prelude::*};
 use embedded_icon::{
     NewIcon,
@@ -12,6 +11,7 @@ use embedded_icon::{
 };
 use mousefood::prelude::*;
 use ratatui::Terminal;
+use std::collections::VecDeque;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -229,7 +229,7 @@ fn run_sim() {
             match event {
                 SimulatorEvent::Quit => should_quit = true,
                 SimulatorEvent::KeyDown { keycode, .. } => {
-                    use embedded_graphics_simulator::sdl2::keyboard::Keycode;
+                    use embedded_graphics_simulator::sdl2::Keycode;
                     match keycode {
                         Keycode::Right | Keycode::D => page = page.next(),
                         Keycode::Left | Keycode::A => page = page.prev(),

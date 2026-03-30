@@ -25,14 +25,14 @@ pub struct ButtonReader {
 impl ButtonReader {
     pub fn new() -> Result<Self, AppError> {
         let mut chip = Chip::new("/dev/gpiochip0").map_err(|_| AppError::Gpio)?;
-        let btn_a = CdevPin::new(
+        let mut btn_a = CdevPin::new(
             chip.get_line(BTN_A)
                 .map_err(|_| AppError::Gpio)?
                 .request(LineRequestFlags::INPUT, 0, "pipulse-btn-a")
                 .map_err(|_| AppError::Gpio)?,
         )
         .map_err(|_| AppError::Gpio)?;
-        let btn_b = CdevPin::new(
+        let mut btn_b = CdevPin::new(
             chip.get_line(BTN_B)
                 .map_err(|_| AppError::Gpio)?
                 .request(LineRequestFlags::INPUT, 0, "pipulse-btn-b")
