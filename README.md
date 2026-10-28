@@ -4,19 +4,13 @@ Rust system-status display for the Raspberry Pi. Renders live metrics on an [Ada
 
 ## Display
 
-```
-─ hostname ─────────────────────
-CPU  42% ████████░░░░░░░░░░░░░░
-Mem  61% ████████████░░░░░░░░░░
-Dsk  28% █████░░░░░░░░░░░░░░░░░
-────────────────────────────────
-192.168.1.42
-47.3°C
-Up  2d 4h 12m
-Ld  0.45 0.38 0.31
-```
+Two pages, switched with the buttons. Both use a 7×13 font with bold values.
 
-Gauge bars turn yellow at warn thresholds and red at critical (CPU: 50/80%, Mem: 60/85%, Disk: 70/90%). Temperature colours: green <55°C, yellow <70°C, red ≥70°C.
+| Overview | Network |
+|---|---|
+| ![Overview page](docs/images/overview.png) | ![Network page](docs/images/network.png) |
+
+Gauge values turn amber at warn thresholds and red at critical (CPU: 50/80%, Mem: 60/85%, Disk: 70/90%). Temperature: green <55°C, amber <70°C, red ≥70°C. The 1-minute load is green below the core count, amber above it and red above twice it.
 
 ## Metrics
 
@@ -29,8 +23,9 @@ Gauge bars turn yellow at warn thresholds and red at critical (CPU: 50/80%, Mem:
 | Disk usage % | `sysinfo`, `/` mount |
 | CPU temperature | `sysinfo` components, falling back to `/sys/class/thermal/thermal_zone0/temp` |
 | Uptime | `sysinfo` |
-| Load average (1/5/15 min) | `sysinfo` |
-| Network rx/tx rate | `sysinfo` byte counters for the primary interface |
+| Load average (1/5/15 min) | `sysinfo`, coloured against the core count |
+| Clock | local time via `chrono` |
+| Network rx/tx rate and totals | `sysinfo` byte counters for the primary interface |
 
 Updates once per second. The buttons switch between the Overview and Network pages.
 
@@ -60,6 +55,15 @@ The simulator shows the 240×240 screen on a mock Mini PiTFT board, scaled 3× w
 | `A` / `↑` / `←` | Top button (A): previous page |
 | `B` / `↓` / `→` | Bottom button (B): next page |
 | `Esc` | Quit |
+
+Set `PIPULSE_DEMO=1` to show fixed sample data with the network history pre-filled, and `PIPULSE_PAGE=network` to start on the Network page. The screenshots above are generated with:
+
+```bash
+for page in overview network; do
+  SDL_VIDEODRIVER=dummy PIPULSE_DEMO=1 PIPULSE_PAGE=$page PIPULSE_SIM_SCALE=2 \
+    EG_SIMULATOR_DUMP=docs/images/$page.png cargo run --no-default-features --features sim
+done
+```
 
 ## Install on the Pi (.deb)
 

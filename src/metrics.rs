@@ -11,11 +11,20 @@ pub struct Snapshot {
     pub disk_pct: u8,
     pub temp: Option<f32>,
     pub uptime: String,
-    pub load: String,
+    /// 1, 5 and 15 minute load averages.
+    pub load: [f64; 3],
+    /// Logical CPU count, for judging the load average.
+    pub cores: usize,
+    /// Local time as `HH:MM`.
+    pub time: String,
     /// Receive rate in bytes/sec since the previous sample.
     pub rx_bps: u64,
     /// Transmit rate in bytes/sec since the previous sample.
     pub tx_bps: u64,
+    /// Bytes received on the primary interface since boot.
+    pub rx_total: u64,
+    /// Bytes transmitted on the primary interface since boot.
+    pub tx_total: u64,
 }
 
 /// Long-lived sysinfo handles, refreshed in place on every sample rather than
@@ -70,6 +79,8 @@ impl Metrics {
             None => ("no ip".into(), String::new()),
         };
         let (rx_bps, tx_bps) = self.net_rates(&iface);
+        let (rx_total, tx_total) = iface_totals(&self.networks, &iface);
+        let la = System::load_average();
 
         Snapshot {
             ip,
@@ -83,12 +94,13 @@ impl Metrics {
             }),
             temp: self.cpu_temp(),
             uptime: uptime_str(System::uptime()),
-            load: {
-                let la = System::load_average();
-                format!("{:.2} {:.2} {:.2}", la.one, la.five, la.fifteen)
-            },
+            load: [la.one, la.five, la.fifteen],
+            cores: std::thread::available_parallelism().map_or(1, |n| n.get()),
+            time: chrono::Local::now().format("%H:%M").to_string(),
             rx_bps,
             tx_bps,
+            rx_total,
+            tx_total,
         }
     }
 
@@ -170,5 +182,52 @@ fn uptime_str(secs: u64) -> String {
         format!("{hours}h {mins}m")
     } else {
         format!("{mins}m")
+    }
+}
+
+/// Fixed, realistic sample data for screenshots: run the simulator with
+/// `PIPULSE_DEMO=1`. Network rates follow a repeating wave so the sparklines
+/// have shape.
+#[cfg(feature = "sim")]
+pub struct Demo {
+    tick: usize,
+}
+
+#[cfg(feature = "sim")]
+impl Demo {
+    pub fn new() -> Self {
+        Self { tick: 0 }
+    }
+
+    /// Rates for tick `i`: (rx, tx) in bytes/sec.
+    pub fn rates(i: usize) -> (u64, u64) {
+        // Cheap deterministic jitter so bars aren't a perfect sine
+        let jitter = |seed: usize| ((i * 7919 + seed) % 97) as f64 / 97.0;
+        let wave = 0.5 + 0.5 * (i as f64 / 6.0).sin();
+        let rx = 20_000.0 + 2_400_000.0 * wave * (0.4 + 0.6 * jitter(13));
+        let tx = 5_000.0 + 380_000.0 * wave * (0.4 + 0.6 * jitter(71));
+        (rx as u64, tx as u64)
+    }
+
+    pub fn sample(&mut self) -> Snapshot {
+        let (rx_bps, tx_bps) = Self::rates(self.tick);
+        self.tick += 1;
+        Snapshot {
+            ip: "192.168.1.42".into(),
+            iface: "wlan0".into(),
+            hostname: "pipulse".into(),
+            cpu_pct: 37,
+            mem_pct: 61,
+            disk_pct: 28,
+            temp: Some(52.3),
+            uptime: "2d 4h 12m".into(),
+            load: [0.45, 0.38, 0.31],
+            cores: 4,
+            time: "21:47".into(),
+            rx_bps,
+            tx_bps,
+            rx_total: 18_400_000_000,
+            tx_total: 2_100_000_000,
+        }
     }
 }
