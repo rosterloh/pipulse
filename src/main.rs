@@ -221,8 +221,9 @@ fn run_sim() {
 
         setup.window.update(&setup.display);
 
-        #[cfg(feature = "ci")]
-        break;
+        if cfg!(feature = "ci") {
+            break;
+        }
 
         let mut should_quit = false;
         for event in setup.window.events() {

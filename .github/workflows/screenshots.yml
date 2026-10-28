@@ -10,6 +10,11 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    env:
+      # Shared by both checkouts so common dependencies are only compiled once
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
 
     steps:
       - uses: actions/checkout@v6
@@ -21,6 +26,16 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: after
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-screenshots-${{ hashFiles('before/Cargo.lock', 'after/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-screenshots-
 
       - name: Install SDL2
         run: |
@@ -39,12 +54,20 @@ jobs:
           SDL_VIDEODRIVER: dummy
         run: EG_SIMULATOR_DUMP=/tmp/after.png cargo run --no-default-features --features sim,ci
 
-      - name: Upload screenshots
-        id: upload-artifacts
+      # Uploaded unzipped so each link opens the PNG directly
+      - name: Upload before screenshot
+        id: upload-before
         uses: actions/upload-artifact@v7
         with:
-          name: screenshots
-          path: /tmp/*.png
+          path: /tmp/before.png
+          archive: false
+
+      - name: Upload after screenshot
+        id: upload-after
+        uses: actions/upload-artifact@v7
+        with:
+          path: /tmp/after.png
+          archive: false
 
       - name: Post PR comment
         env:
@@ -54,6 +77,4 @@ jobs:
             --repo ${{ github.repository }} \
             --body "## Display Preview
 
-          | Before | After |
-          |--------|-------|
-          | ![Before Screenshot](${{ steps.upload-artifacts.outputs.artifact-url }}/before.png) | ![After Screenshot](${{ steps.upload-artifacts.outputs.artifact-url }}/after.png) |"
+          [Before](${{ steps.upload-before.outputs.artifact-url }}) · [After](${{ steps.upload-after.outputs.artifact-url }})"
