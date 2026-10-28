@@ -29,9 +29,9 @@ embedded-graphics = "0.8.2"
 embedded-graphics-simulator = { version = "0.8.0", optional = true }
 embedded-hal = "1.0.0"
 embedded-icon = { version = "0.0.1", default-features = false, features = ["18px", "mdi"] }
-linux-embedded-hal = "0.4.1"
-sysinfo = "0.38.4"
-thiserror = "2.0.18"
+linux-embedded-hal = "0.5.0"
+sysinfo = "0.39.6"
+thiserror = "2.0.21"
 mipidsi = "0.10.0"
-mousefood = { version = "0.5.0", default-features = false, features = ["fonts"] }
-ratatui = { version = "0.30.0", default-features = false, features = ["unstable-widget-ref"] }
+mousefood = { version = "0.5.3", default-features = false, features = ["fonts"] }
+ratatui = { version = "0.30.2", default-features = false, features = ["unstable-widget-ref"] }
