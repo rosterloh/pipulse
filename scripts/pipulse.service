@@ -1,5 +1,5 @@
 [Unit]
-Description=PiPulse — Raspberry Pi OLED Status
+Description=PiPulse — Raspberry Pi TFT Status Display
 After=network-online.target
 Wants=network-online.target
 
@@ -7,9 +7,29 @@ Wants=network-online.target
 Type=simple
 ExecStart=/usr/local/bin/pipulse
 Restart=on-failure
-# Requires membership in the `spi` and `gpio` groups.
-# If running as root, these lines can be omitted.
+RestartSec=5
+
+# Run as an unprivileged, transient user. Hardware access comes from the
+# `spi` and `gpio` groups (/dev/spidev0.0 and /dev/gpiochip0), so no root
+# or CAP_SYS_RAWIO is needed.
+DynamicUser=yes
 SupplementaryGroups=spi gpio
+
+# Hardening. /dev must stay visible (no PrivateDevices) for SPI and GPIO.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
 
 [Install]
 WantedBy=multi-user.target

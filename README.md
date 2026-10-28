@@ -1,6 +1,6 @@
 # PiPulse
 
-Rust system-status display for the Raspberry Pi. Renders live metrics on an [Adafruit miniPiTFT](https://www.adafruit.com/product/4484) (ST7789, 135×240) using [Ratatui](https://ratatui.rs/) via the [mousefood](https://crates.io/crates/mousefood) embedded-graphics backend.
+Rust system-status display for the Raspberry Pi. Renders live metrics on an [Adafruit miniPiTFT](https://www.adafruit.com/product/4484) (ST7789, 240×240) using [Ratatui](https://ratatui.rs/) via the [mousefood](https://crates.io/crates/mousefood) embedded-graphics backend.
 
 ## Display
 
@@ -22,16 +22,17 @@ Gauge bars turn yellow at warn thresholds and red at critical (CPU: 50/80%, Mem:
 
 | Metric | Source |
 |---|---|
-| Hostname | `/etc/hostname` |
-| IPv4 address | `get_if_addrs` (skips loopback, docker, veth) |
-| CPU usage % | `/proc/stat` delta between samples |
-| Memory usage % | `/proc/meminfo` MemTotal / MemAvailable |
-| Disk usage % | `statvfs("/")` |
-| CPU temperature | `/sys/class/thermal/thermal_zone0/temp` |
-| Uptime | `/proc/uptime` |
-| Load average (1/5/15 min) | `/proc/loadavg` |
+| Hostname | `sysinfo` |
+| IPv4 address | `sysinfo` networks (first non-virtual interface by name; skips loopback, docker, veth) |
+| CPU usage % | `sysinfo`, delta between samples |
+| Memory usage % | `sysinfo` used / total |
+| Disk usage % | `sysinfo`, `/` mount |
+| CPU temperature | `sysinfo` components, falling back to `/sys/class/thermal/thermal_zone0/temp` |
+| Uptime | `sysinfo` |
+| Load average (1/5/15 min) | `sysinfo` |
+| Network rx/tx rate | `sysinfo` byte counters for the primary interface |
 
-Updates once per second.
+Updates once per second. The buttons switch between the Overview and Network pages.
 
 ## Build & run
 
@@ -68,7 +69,7 @@ cargo deb --target aarch64-unknown-linux-gnu
 sudo dpkg -i target/debian/pipulse_*.deb
 ```
 
-The `.deb` installs `/usr/local/bin/pipulse` and a systemd unit that starts automatically. The service user needs membership in the `spi` and `gpio` groups (no `CAP_SYS_RAWIO` required).
+The `.deb` installs `/usr/local/bin/pipulse` and a systemd unit that starts automatically. The service runs as an unprivileged dynamic user in the `spi` and `gpio` groups (no root or `CAP_SYS_RAWIO` required). If it fails to start, `journalctl -u pipulse` shows the underlying GPIO/SPI error.
 
 ## Feature flags
 
@@ -76,6 +77,7 @@ The `.deb` installs `/usr/local/bin/pipulse` and a systemd unit that starts auto
 |---|---|---|
 | `hw` | yes | Real SPI/GPIO hardware path |
 | `sim` | no | SDL2 simulator window |
+| `ci` | no | With `sim`: render one frame and exit (headless PNG snapshots) |
 
 `hw` and `sim` are mutually exclusive. Always pass `--no-default-features` when enabling `sim`.
 
