@@ -69,7 +69,7 @@ The codebase is split into five files:
 
 - **`src/metrics.rs`** — reads system data. `Metrics` holds long-lived `sysinfo` handles (`System`, `Networks`, `Disks`, `Components`) that are refreshed in place each tick; `Metrics::sample()` returns a `Snapshot` (IP/interface, hostname, CPU/mem/disk %, temperature, uptime, load average and network rx/tx rates). The primary interface is the first non-virtual one with an IPv4 address, in name order. No hardware dependency.
 
-- **`src/ui.rs`** — builds the Ratatui layout and renders it. `render<B: Backend>(terminal, state)` is fully generic over the backend, so it works identically for both hw and sim. `AppState` borrows the network history rather than cloning it. To add a new metric: add a field to `Snapshot` and `AppState`, add a row to the page's `Layout`, and render a new `Paragraph`. No display code needed.
+- **`src/ui.rs`** — builds the Ratatui layout and renders it. `render<B: Backend>(terminal, state)` is fully generic over the backend, so it works identically for both hw and sim. `AppState` borrows the network history rather than cloning it. `AppState` wraps the `metrics::Snapshot`. To add a new metric: add a field to `Snapshot`, add a row to the page's `Layout`, and render a new `Paragraph`. No display code needed. The terminal uses mousefood's 7×13 fonts (regular + bold, set in `new_terminal`), giving 18 rows × 34 columns; `CHAR_H` in main.rs must match the font height, and the Overview icons are drawn at `ui::OVERVIEW_ICON_ROW`.
 
 - **`src/input.rs`** (feature `hw`) — `ButtonReader` polls the two miniPiTFT buttons (GPIO 23/24, active-low) and reports edge-triggered `Prev`/`Next` events.
 

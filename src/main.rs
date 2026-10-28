@@ -9,7 +9,7 @@ use embedded_icon::{
     NewIcon,
     mdi::size18px::{ClockOutline, Ethernet, Network, Server, Thermometer, Wifi},
 };
-use mousefood::prelude::*;
+use mousefood::{fonts, prelude::*};
 use ratatui::Terminal;
 use std::collections::VecDeque;
 use std::process::ExitCode;
@@ -28,8 +28,9 @@ pub enum AppError {
     Display(String),
 }
 
-/// Height of one character row in pixels (matches mousefood's default font).
-const CHAR_H: i32 = 10;
+/// Height of one character row in pixels (matches the 7x13 font set in
+/// `new_terminal`).
+const CHAR_H: i32 = 13;
 
 /// How often metrics are sampled and the screen redrawn.
 const TICK: Duration = Duration::from_secs(1);
@@ -41,7 +42,8 @@ const POLL: Duration = Duration::from_millis(20);
 /// Number of network samples kept in history for the sparkline graphs.
 const HISTORY_LEN: usize = 40;
 
-/// Draw embedded-icon MDI icons at the pixel positions of rows 7-10.
+/// Draw embedded-icon MDI icons beside the Overview info rows
+/// (`ui::OVERVIEW_ICON_ROW` onwards).
 ///
 /// Must be called *after* `terminal.draw()` has completed, so that the icons
 /// overwrite the leading spaces that Ratatui filled with background colour.
@@ -52,8 +54,8 @@ fn draw_icons<D>(display: &mut D, state: &ui::AppState<'_>)
 where
     D: DrawTarget<Color = Rgb565>,
 {
-    // Rows 0-6 each occupy CHAR_H pixels. Rows 7-10 are 2*CHAR_H each.
-    let base_y = 7 * CHAR_H;
+    // Rows above the info rows each occupy CHAR_H pixels; info rows are 2*CHAR_H.
+    let base_y = ui::OVERVIEW_ICON_ROW * CHAR_H;
     let row_h = 2 * CHAR_H;
     let icon_h = 18_i32;
     let offset = (row_h - icon_h) / 2; // vertical centering within 2-char row
@@ -63,11 +65,11 @@ where
 
     // Row 7 — network icon varies by interface type
     let y0 = base_y + offset;
-    if state.iface.starts_with("wlan") {
+    if state.snap.iface.starts_with("wlan") {
         Image::new(&Wifi::new(white), Point::new(0, y0))
             .draw(display)
             .ok();
-    } else if state.iface.starts_with("eth") {
+    } else if state.snap.iface.starts_with("eth") {
         Image::new(&Ethernet::new(white), Point::new(0, y0))
             .draw(display)
             .ok();
@@ -79,7 +81,7 @@ where
 
     // Row 8 — thermometer, colour-coded like the text
     let y1 = base_y + row_h + offset;
-    let temp_col = state.temp.map_or(gray, |t| {
+    let temp_col = state.snap.temp.map_or(gray, |t| {
         if t >= 70.0 {
             Rgb565::new(26, 22, 10) // ~(210, 90, 80)
         } else if t >= 55.0 {
@@ -136,15 +138,7 @@ impl App {
         push_bounded(&mut self.tx_history, m.tx_bps);
 
         let state = ui::AppState {
-            ip: m.ip,
-            iface: m.iface,
-            hostname: m.hostname,
-            cpu_pct: m.cpu_pct,
-            mem_pct: m.mem_pct,
-            disk_pct: m.disk_pct,
-            temp: m.temp,
-            uptime: m.uptime,
-            load: m.load,
+            snap: m,
             page: self.page,
             rx_history: &self.rx_history,
             tx_history: &self.tx_history,
@@ -189,11 +183,13 @@ fn new_terminal<D>(display: &mut D) -> Result<Terminal<EmbeddedBackend<'_, D, Rg
 where
     D: DrawTarget<Color = Rgb565> + 'static,
 {
-    Terminal::new(EmbeddedBackend::new(
-        display,
-        EmbeddedBackendConfig::default(),
-    ))
-    .map_err(|e| AppError::Display(format!("{e:?}")))
+    let config = EmbeddedBackendConfig {
+        font_regular: fonts::mono_7x13_atlas(),
+        font_bold: Some(fonts::mono_7x13_bold_atlas()),
+        ..Default::default()
+    };
+    Terminal::new(EmbeddedBackend::new(display, config))
+        .map_err(|e| AppError::Display(format!("{e:?}")))
 }
 
 fn main() -> ExitCode {

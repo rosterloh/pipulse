@@ -11,11 +11,20 @@ pub struct Snapshot {
     pub disk_pct: u8,
     pub temp: Option<f32>,
     pub uptime: String,
-    pub load: String,
+    /// 1, 5 and 15 minute load averages.
+    pub load: [f64; 3],
+    /// Logical CPU count, for judging the load average.
+    pub cores: usize,
+    /// Local time as `HH:MM`.
+    pub time: String,
     /// Receive rate in bytes/sec since the previous sample.
     pub rx_bps: u64,
     /// Transmit rate in bytes/sec since the previous sample.
     pub tx_bps: u64,
+    /// Bytes received on the primary interface since boot.
+    pub rx_total: u64,
+    /// Bytes transmitted on the primary interface since boot.
+    pub tx_total: u64,
 }
 
 /// Long-lived sysinfo handles, refreshed in place on every sample rather than
@@ -70,6 +79,8 @@ impl Metrics {
             None => ("no ip".into(), String::new()),
         };
         let (rx_bps, tx_bps) = self.net_rates(&iface);
+        let (rx_total, tx_total) = iface_totals(&self.networks, &iface);
+        let la = System::load_average();
 
         Snapshot {
             ip,
@@ -83,12 +94,13 @@ impl Metrics {
             }),
             temp: self.cpu_temp(),
             uptime: uptime_str(System::uptime()),
-            load: {
-                let la = System::load_average();
-                format!("{:.2} {:.2} {:.2}", la.one, la.five, la.fifteen)
-            },
+            load: [la.one, la.five, la.fifteen],
+            cores: std::thread::available_parallelism().map_or(1, |n| n.get()),
+            time: chrono::Local::now().format("%H:%M").to_string(),
             rx_bps,
             tx_bps,
+            rx_total,
+            tx_total,
         }
     }
 
