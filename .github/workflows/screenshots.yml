@@ -8,7 +8,9 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # write: screenshots are pushed to the `screenshots` branch so the
+      # PR comment can embed them (artifacts are zipped and need a login)
+      contents: write
       pull-requests: write
     env:
       # Shared by both checkouts so common dependencies are only compiled once
@@ -61,14 +63,50 @@ jobs:
           name: screenshots
           path: /tmp/*.png
 
+      - name: Publish screenshots
+        id: publish
+        # Fork PRs get a read-only token; they still get the artifact
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHOT_DIR: pr-${{ github.event.pull_request.number }}/${{ github.event.pull_request.head.sha }}
+        run: |
+          git init -q /tmp/shots && cd /tmp/shots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          if git fetch -q --depth 1 origin screenshots; then
+            git checkout -q -b screenshots FETCH_HEAD
+          else
+            git checkout -q --orphan screenshots
+          fi
+          mkdir -p "$SHOT_DIR"
+          cp /tmp/before.png /tmp/after.png "$SHOT_DIR/"
+          git add "$SHOT_DIR"
+          git commit -q -m "Screenshots for $SHOT_DIR"
+          # Retry in case another PR pushed to the branch concurrently
+          for i in 1 2 3; do
+            git push -q origin screenshots && pushed=1 && break
+            git pull -q --rebase origin screenshots
+          done
+          [ -n "$pushed" ]
+          echo "base=https://raw.githubusercontent.com/${{ github.repository }}/screenshots/$SHOT_DIR" >> "$GITHUB_OUTPUT"
+
       - name: Post PR comment
         env:
           GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.publish.outputs.base }}
+          ARTIFACT: ${{ steps.upload-artifacts.outputs.artifact-url }}
         run: |
+          if [ -n "$BASE" ]; then
+            table="| Before | After |
+          |--------|-------|
+          | ![Before Screenshot]($BASE/before.png) | ![After Screenshot]($BASE/after.png) |"
+          else
+            table="Screenshots are in the [workflow artifact]($ARTIFACT)."
+          fi
           gh pr comment ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} \
             --body "## Display Preview
 
-          | Before | After |
-          |--------|-------|
-          | ![Before Screenshot](${{ steps.upload-artifacts.outputs.artifact-url }}/before.png) | ![After Screenshot](${{ steps.upload-artifacts.outputs.artifact-url }}/after.png) |"
+          $table"
