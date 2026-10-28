@@ -22,7 +22,6 @@ start = true
 default = ["hw"]
 hw  = ["dep:embedded-hal", "dep:linux-embedded-hal", "dep:mipidsi"]
 sim = ["dep:embedded-graphics-simulator"]
-ci  = []
 
 [dependencies]
 embedded-graphics = "0.8.2"

@@ -37,7 +37,7 @@ jobs:
           sudo apt-get install -y libsdl2-dev
 
       - name: Build
-        run: cargo build --no-default-features --features sim,ci
+        run: cargo build --no-default-features --features sim
 
   screenshots:
     if: github.event_name == 'pull_request'
@@ -79,13 +79,13 @@ jobs:
         working-directory: before
         env:
           SDL_VIDEODRIVER: dummy
-        run: EG_SIMULATOR_DUMP=/tmp/before.png cargo run --no-default-features --features sim,ci
+        run: EG_SIMULATOR_DUMP=/tmp/before.png cargo run --no-default-features --features sim
 
       - name: After screenshot
         working-directory: after
         env:
           SDL_VIDEODRIVER: dummy
-        run: EG_SIMULATOR_DUMP=/tmp/after.png cargo run --no-default-features --features sim,ci
+        run: EG_SIMULATOR_DUMP=/tmp/after.png cargo run --no-default-features --features sim
 
       # Uploaded unzipped so each link opens the PNG directly
       - name: Upload before screenshot

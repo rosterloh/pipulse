@@ -44,12 +44,22 @@ cargo check
 sudo apt install libsdl2-dev
 cargo run --no-default-features --features sim
 
-# Headless PNG snapshot (CI-friendly)
-EG_SIMULATOR_DUMP=/tmp/pipulse.png cargo run --no-default-features --features sim,ci
+# Headless PNG snapshot (CI-friendly): the simulator saves the first frame and exits
+EG_SIMULATOR_DUMP=/tmp/pipulse.png cargo run --no-default-features --features sim
 
 # Build release binary
 cargo build --release
 ```
+
+### Simulator
+
+The simulator shows the 240×240 screen on a mock Mini PiTFT board, scaled 3× with a visible pixel grid (`PIPULSE_SIM_SCALE=1`–`4` to change; `1` disables the grid). It samples once per second like the device.
+
+| Key | Board button |
+|---|---|
+| `A` / `↑` / `←` | Top button (A): previous page |
+| `B` / `↓` / `→` | Bottom button (B): next page |
+| `Esc` | Quit |
 
 ## Install on the Pi (.deb)
 
@@ -77,7 +87,6 @@ The `.deb` installs `/usr/local/bin/pipulse` and a systemd unit that starts auto
 |---|---|---|
 | `hw` | yes | Real SPI/GPIO hardware path |
 | `sim` | no | SDL2 simulator window |
-| `ci` | no | With `sim`: render one frame and exit (headless PNG snapshots) |
 
 `hw` and `sim` are mutually exclusive. Always pass `--no-default-features` when enabling `sim`.
 

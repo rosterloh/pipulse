@@ -13,8 +13,7 @@ use mousefood::prelude::*;
 use ratatui::Terminal;
 use std::collections::VecDeque;
 use std::process::ExitCode;
-#[cfg(all(feature = "hw", not(feature = "sim")))]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -31,6 +30,13 @@ pub enum AppError {
 
 /// Height of one character row in pixels (matches mousefood's default font).
 const CHAR_H: i32 = 10;
+
+/// How often metrics are sampled and the screen redrawn.
+const TICK: Duration = Duration::from_secs(1);
+
+/// How often input is polled between ticks, so short button presses aren't
+/// missed and page changes show immediately.
+const POLL: Duration = Duration::from_millis(20);
 
 /// Number of network samples kept in history for the sparkline graphs.
 const HISTORY_LEN: usize = 40;
@@ -212,49 +218,92 @@ fn run_hw() -> Result<(), AppError> {
     let mut terminal = new_terminal(&mut hw.display)?;
     let mut buttons = input::ButtonReader::new()?;
     let mut app = App::new();
+    let mut next_tick = Instant::now();
 
     loop {
-        // Handle button presses (edge-triggered, active-low)
-        match buttons.poll()? {
-            input::ButtonEvent::Next => app.set_page(app.page.next(), &mut terminal)?,
-            input::ButtonEvent::Prev => app.set_page(app.page.prev(), &mut terminal)?,
-            input::ButtonEvent::None => {}
+        // Handle button presses (edge-triggered, active-low); a page change
+        // redraws straight away rather than waiting for the next tick.
+        let page = match buttons.poll()? {
+            input::ButtonEvent::Next => Some(app.page.next()),
+            input::ButtonEvent::Prev => Some(app.page.prev()),
+            input::ButtonEvent::None => None,
+        };
+        if let Some(page) = page {
+            app.set_page(page, &mut terminal)?;
+            next_tick = Instant::now();
         }
 
-        app.tick(&mut terminal)?;
+        if Instant::now() >= next_tick {
+            app.tick(&mut terminal)?;
+            next_tick = Instant::now() + TICK;
+        }
 
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(POLL);
     }
 }
 
 #[cfg(feature = "sim")]
 fn run_sim() -> Result<(), AppError> {
+    use display::sim::Button;
     use embedded_graphics_simulator::{SimulatorEvent, sdl2::Keycode};
 
-    let mut setup = display::sim::init();
-    let mut terminal = new_terminal(&mut setup.display)?;
+    // Keys mirror the board: A/Up = top button (previous page),
+    // B/Down = bottom button (next page). Left/Right also work.
+    fn button(keycode: Keycode) -> Option<Button> {
+        match keycode {
+            Keycode::A | Keycode::Up | Keycode::Left => Some(Button::A),
+            Keycode::B | Keycode::Down | Keycode::Right => Some(Button::B),
+            _ => None,
+        }
+    }
+
+    let mut screen = display::sim::new_screen();
+    let mut terminal = new_terminal(&mut screen)?;
+    let mut device = display::sim::Device::new();
     let mut app = App::new();
+    let mut next_tick = Instant::now();
+    let mut dirty = false;
 
     loop {
-        app.tick(&mut terminal)?;
-        setup.window.update(terminal.backend().display());
-
-        if cfg!(feature = "ci") {
-            return Ok(());
+        // Same cadence as the hardware: sample once per tick, poll input often
+        if Instant::now() >= next_tick {
+            app.tick(&mut terminal)?;
+            next_tick = Instant::now() + TICK;
+            dirty = true;
+        }
+        if dirty {
+            device.present(terminal.backend().display());
+            dirty = false;
         }
 
-        for event in setup.window.events() {
+        for event in device.events() {
             match event {
                 SimulatorEvent::Quit => return Ok(()),
-                SimulatorEvent::KeyDown { keycode, .. } => match keycode {
-                    Keycode::Right | Keycode::D => app.set_page(app.page.next(), &mut terminal)?,
-                    Keycode::Left | Keycode::A => app.set_page(app.page.prev(), &mut terminal)?,
-                    _ => {}
-                },
+                SimulatorEvent::KeyDown {
+                    keycode,
+                    repeat: false,
+                    ..
+                } => {
+                    if let Some(b) = button(keycode) {
+                        device.set_pressed(b, true);
+                        let page = match b {
+                            Button::A => app.page.prev(),
+                            Button::B => app.page.next(),
+                        };
+                        app.set_page(page, &mut terminal)?;
+                        next_tick = Instant::now();
+                    }
+                }
+                SimulatorEvent::KeyUp { keycode, .. } => {
+                    if let Some(b) = button(keycode) {
+                        device.set_pressed(b, false);
+                        dirty = true;
+                    }
+                }
                 _ => {}
             }
         }
 
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(POLL);
     }
 }
