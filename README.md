@@ -6,31 +6,9 @@ Rust system-status display for the Raspberry Pi. Renders live metrics on an [Ada
 
 Two pages, switched with the buttons. Both use a 7×13 font with bold values.
 
-```
-pipulse                    21:47 ●○
-
-CPU  37% ████████░░░░░░░░░░░░░░░
-Mem  61% ██████████████░░░░░░░░░
-Dsk  28% ██████░░░░░░░░░░░░░░░░░
-─────────────────────────────────
-     192.168.1.42
-     temp 52.3°C
-     up   2d 4h 12m
-     load 0.45 0.38 0.31
-```
-
-```
-Network                    21:47 ○●
-
-wlan0 192.168.1.42
-─────────────────────────────────
-Rx ↓ 1.3 MB/s       peak 2.0 MB/s
-▂▃▅▇█▆▅▃▂▁ … (40 s history)
-Tx ↑ 187 KB/s       peak 361 KB/s
-▁▂▃▅▆▅▃▂▁▁ …
-─────────────────────────────────
-total ↓ 18.4 GB  ↑ 2.1 GB
-```
+| Overview | Network |
+|---|---|
+| ![Overview page](docs/images/overview.png) | ![Network page](docs/images/network.png) |
 
 Gauge values turn amber at warn thresholds and red at critical (CPU: 50/80%, Mem: 60/85%, Disk: 70/90%). Temperature: green <55°C, amber <70°C, red ≥70°C. The 1-minute load is green below the core count, amber above it and red above twice it.
 
@@ -77,6 +55,15 @@ The simulator shows the 240×240 screen on a mock Mini PiTFT board, scaled 3× w
 | `A` / `↑` / `←` | Top button (A): previous page |
 | `B` / `↓` / `→` | Bottom button (B): next page |
 | `Esc` | Quit |
+
+Set `PIPULSE_DEMO=1` to show fixed sample data with the network history pre-filled, and `PIPULSE_PAGE=network` to start on the Network page. The screenshots above are generated with:
+
+```bash
+for page in overview network; do
+  SDL_VIDEODRIVER=dummy PIPULSE_DEMO=1 PIPULSE_PAGE=$page PIPULSE_SIM_SCALE=2 \
+    EG_SIMULATOR_DUMP=docs/images/$page.png cargo run --no-default-features --features sim
+done
+```
 
 ## Install on the Pi (.deb)
 

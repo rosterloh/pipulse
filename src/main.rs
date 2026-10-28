@@ -107,9 +107,26 @@ where
         .ok();
 }
 
+/// Where `App` gets its metrics from.
+enum Source {
+    Live(Box<metrics::Metrics>),
+    #[cfg(feature = "sim")]
+    Demo(metrics::Demo),
+}
+
+impl Source {
+    fn sample(&mut self) -> metrics::Snapshot {
+        match self {
+            Source::Live(m) => m.sample(),
+            #[cfg(feature = "sim")]
+            Source::Demo(d) => d.sample(),
+        }
+    }
+}
+
 /// Metrics collection and page state shared by the hw and sim run loops.
 struct App {
-    metrics: metrics::Metrics,
+    source: Source,
     page: ui::Page,
     rx_history: VecDeque<u64>,
     tx_history: VecDeque<u64>,
@@ -118,11 +135,25 @@ struct App {
 impl App {
     fn new() -> Self {
         Self {
-            metrics: metrics::Metrics::new(),
+            source: Source::Live(Box::new(metrics::Metrics::new())),
             page: ui::Page::default(),
             rx_history: VecDeque::with_capacity(HISTORY_LEN),
             tx_history: VecDeque::with_capacity(HISTORY_LEN),
         }
+    }
+
+    /// An `App` showing fixed sample data, with the network history already
+    /// full so the first frame looks like a long-running device.
+    #[cfg(feature = "sim")]
+    fn demo() -> Self {
+        let mut app = Self::new();
+        app.source = Source::Demo(metrics::Demo::new());
+        for i in 0..HISTORY_LEN - 1 {
+            let (rx, tx) = metrics::Demo::rates(HISTORY_LEN + i);
+            push_bounded(&mut app.rx_history, rx);
+            push_bounded(&mut app.tx_history, tx);
+        }
+        app
     }
 
     /// Samples all metrics and draws the current page, then the icons on top.
@@ -133,7 +164,7 @@ impl App {
     where
         D: DrawTarget<Color = Rgb565> + 'static,
     {
-        let m = self.metrics.sample();
+        let m = self.source.sample();
         push_bounded(&mut self.rx_history, m.rx_bps);
         push_bounded(&mut self.tx_history, m.tx_bps);
 
@@ -256,7 +287,15 @@ fn run_sim() -> Result<(), AppError> {
     let mut screen = display::sim::new_screen();
     let mut terminal = new_terminal(&mut screen)?;
     let mut device = display::sim::Device::new();
-    let mut app = App::new();
+    let mut app = if std::env::var_os("PIPULSE_DEMO").is_some() {
+        App::demo()
+    } else {
+        App::new()
+    };
+    // Start on a given page, e.g. for screenshots of the Network page
+    if std::env::var("PIPULSE_PAGE").as_deref() == Ok("network") {
+        app.page = ui::Page::Network;
+    }
     let mut next_tick = Instant::now();
     let mut dirty = false;
 

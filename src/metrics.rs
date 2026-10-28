@@ -184,3 +184,50 @@ fn uptime_str(secs: u64) -> String {
         format!("{mins}m")
     }
 }
+
+/// Fixed, realistic sample data for screenshots: run the simulator with
+/// `PIPULSE_DEMO=1`. Network rates follow a repeating wave so the sparklines
+/// have shape.
+#[cfg(feature = "sim")]
+pub struct Demo {
+    tick: usize,
+}
+
+#[cfg(feature = "sim")]
+impl Demo {
+    pub fn new() -> Self {
+        Self { tick: 0 }
+    }
+
+    /// Rates for tick `i`: (rx, tx) in bytes/sec.
+    pub fn rates(i: usize) -> (u64, u64) {
+        // Cheap deterministic jitter so bars aren't a perfect sine
+        let jitter = |seed: usize| ((i * 7919 + seed) % 97) as f64 / 97.0;
+        let wave = 0.5 + 0.5 * (i as f64 / 6.0).sin();
+        let rx = 20_000.0 + 2_400_000.0 * wave * (0.4 + 0.6 * jitter(13));
+        let tx = 5_000.0 + 380_000.0 * wave * (0.4 + 0.6 * jitter(71));
+        (rx as u64, tx as u64)
+    }
+
+    pub fn sample(&mut self) -> Snapshot {
+        let (rx_bps, tx_bps) = Self::rates(self.tick);
+        self.tick += 1;
+        Snapshot {
+            ip: "192.168.1.42".into(),
+            iface: "wlan0".into(),
+            hostname: "pipulse".into(),
+            cpu_pct: 37,
+            mem_pct: 61,
+            disk_pct: 28,
+            temp: Some(52.3),
+            uptime: "2d 4h 12m".into(),
+            load: [0.45, 0.38, 0.31],
+            cores: 4,
+            time: "21:47".into(),
+            rx_bps,
+            tx_bps,
+            rx_total: 18_400_000_000,
+            tx_total: 2_100_000_000,
+        }
+    }
+}

@@ -18,6 +18,12 @@ cargo run --no-default-features --features sim
 # Headless PNG snapshot — the simulator saves the first frame and exits (used in CI)
 EG_SIMULATOR_DUMP=/tmp/pipulse.png cargo run --no-default-features --features sim
 
+# Regenerate the README screenshots (fixed demo data; see README "Simulator")
+for page in overview network; do
+  SDL_VIDEODRIVER=dummy PIPULSE_DEMO=1 PIPULSE_PAGE=$page PIPULSE_SIM_SCALE=2 \
+    EG_SIMULATOR_DUMP=docs/images/$page.png cargo run --no-default-features --features sim
+done
+
 # Lint (CI runs these with -D warnings)
 cargo fmt --check
 cargo clippy
@@ -77,7 +83,7 @@ The codebase is split into five files:
   - `hw.rs` (feature `hw`): opens `/dev/gpiochip0` (GPIO via `linux-embedded-hal::CdevPin`) and `/dev/spidev0.0` (SPI via `linux-embedded-hal::SpidevDevice`), then initialises the ST7789 via `mipidsi::Builder`. Returns `HwDisplay`, which owns the `mipidsi::Display` and the backlight `LineHandle` (the line is released if the handle is dropped).
   - `sim.rs` (feature `sim`): `new_screen()` is the 240×240 `SimulatorDisplay<Rgb565>` Ratatui renders into; `Device` owns the SDL `Window` and composites the screen onto a mock Mini PiTFT board (buttons highlight while pressed), scaled by `PIPULSE_SIM_SCALE` (default 3) with a pixel grid on the LCD only.
 
-- **`src/main.rs`** — wires everything together. `App` owns the metrics collector, current page and network history; `App::tick()` samples, renders and draws icons, and is shared by `run_hw()` and `run_sim()`. Both create one long-lived `Terminal`, so Ratatui only redraws changed cells. Both loops poll input every `POLL` (20 ms) and sample/redraw every `TICK` (1 s); a page change redraws immediately. Icons are drawn straight onto the display via `terminal.backend_mut().display_mut()` after each draw; `App::set_page()` clears the terminal on a page change so stale icons don't survive on the new page. Errors are returned as `AppError` (with the underlying cause) and printed by `main()`.
+- **`src/main.rs`** — wires everything together. `App` owns the metrics collector, current page and network history; `App::tick()` samples, renders and draws icons, and is shared by `run_hw()` and `run_sim()`. Metrics come from a `Source`: live `metrics::Metrics`, or (sim only, `PIPULSE_DEMO=1`) `metrics::Demo` with fixed sample data for screenshots. When the display layout changes, regenerate `docs/images/*.png` with the command above. Both create one long-lived `Terminal`, so Ratatui only redraws changed cells. Both loops poll input every `POLL` (20 ms) and sample/redraw every `TICK` (1 s); a page change redraws immediately. Icons are drawn straight onto the display via `terminal.backend_mut().display_mut()` after each draw; `App::set_page()` clears the terminal on a page change so stale icons don't survive on the new page. Errors are returned as `AppError` (with the underlying cause) and printed by `main()`.
 
 ### Key design decisions
 
