@@ -12,17 +12,21 @@ use embedded_icon::{
 use mousefood::prelude::*;
 use ratatui::Terminal;
 use std::collections::VecDeque;
+use std::process::ExitCode;
+#[cfg(all(feature = "hw", not(feature = "sim")))]
 use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("GPIO error")]
-    Gpio,
-    #[error("SPI error")]
-    Spi,
-    #[error("Display error")]
-    Display,
+    #[cfg(feature = "hw")]
+    #[error("GPIO error: {0}")]
+    Gpio(String),
+    #[cfg(feature = "hw")]
+    #[error("SPI error: {0}")]
+    Spi(String),
+    #[error("display error: {0}")]
+    Display(String),
 }
 
 /// Height of one character row in pixels (matches mousefood's default font).
@@ -33,13 +37,12 @@ const HISTORY_LEN: usize = 40;
 
 /// Draw embedded-icon MDI icons at the pixel positions of rows 7-10.
 ///
-/// Must be called *after* `terminal.draw()` has completed and the display
-/// borrow has been released, so that the icons overwrite the leading spaces
-/// that Ratatui filled with background colour.
+/// Must be called *after* `terminal.draw()` has completed, so that the icons
+/// overwrite the leading spaces that Ratatui filled with background colour.
 ///
 /// Only call this on the Overview page — the icon positions are baked into
 /// that layout.
-fn draw_icons<D>(display: &mut D, state: &ui::AppState)
+fn draw_icons<D>(display: &mut D, state: &ui::AppState<'_>)
 where
     D: DrawTarget<Color = Rgb565>,
 {
@@ -96,154 +99,162 @@ where
         .ok();
 }
 
-fn main() -> Result<(), AppError> {
+/// Metrics collection and page state shared by the hw and sim run loops.
+struct App {
+    metrics: metrics::Metrics,
+    page: ui::Page,
+    rx_history: VecDeque<u64>,
+    tx_history: VecDeque<u64>,
+}
+
+impl App {
+    fn new() -> Self {
+        Self {
+            metrics: metrics::Metrics::new(),
+            page: ui::Page::default(),
+            rx_history: VecDeque::with_capacity(HISTORY_LEN),
+            tx_history: VecDeque::with_capacity(HISTORY_LEN),
+        }
+    }
+
+    /// Samples all metrics and draws the current page, then the icons on top.
+    fn tick<D>(
+        &mut self,
+        terminal: &mut Terminal<EmbeddedBackend<'_, D, Rgb565>>,
+    ) -> Result<(), AppError>
+    where
+        D: DrawTarget<Color = Rgb565> + 'static,
+    {
+        let m = self.metrics.sample();
+        push_bounded(&mut self.rx_history, m.rx_bps);
+        push_bounded(&mut self.tx_history, m.tx_bps);
+
+        let state = ui::AppState {
+            ip: m.ip,
+            iface: m.iface,
+            hostname: m.hostname,
+            cpu_pct: m.cpu_pct,
+            mem_pct: m.mem_pct,
+            disk_pct: m.disk_pct,
+            temp: m.temp,
+            uptime: m.uptime,
+            load: m.load,
+            page: self.page,
+            rx_history: &self.rx_history,
+            tx_history: &self.tx_history,
+        };
+
+        ui::render(terminal, &state).map_err(|e| AppError::Display(format!("{e:?}")))?;
+        if state.page == ui::Page::Overview {
+            draw_icons(terminal.backend_mut().display_mut(), &state);
+        }
+        Ok(())
+    }
+
+    /// Switches page. The terminal is cleared so the next draw repaints every
+    /// cell: Ratatui only redraws changed cells, so icons drawn directly onto
+    /// the display would otherwise linger over the blank cells of other pages.
+    fn set_page<D>(
+        &mut self,
+        page: ui::Page,
+        terminal: &mut Terminal<EmbeddedBackend<'_, D, Rgb565>>,
+    ) -> Result<(), AppError>
+    where
+        D: DrawTarget<Color = Rgb565> + 'static,
+    {
+        if page != self.page {
+            self.page = page;
+            terminal
+                .clear()
+                .map_err(|e| AppError::Display(format!("{e:?}")))?;
+        }
+        Ok(())
+    }
+}
+
+fn push_bounded(history: &mut VecDeque<u64>, value: u64) {
+    if history.len() >= HISTORY_LEN {
+        history.pop_front();
+    }
+    history.push_back(value);
+}
+
+fn new_terminal<D>(display: &mut D) -> Result<Terminal<EmbeddedBackend<'_, D, Rgb565>>, AppError>
+where
+    D: DrawTarget<Color = Rgb565> + 'static,
+{
+    Terminal::new(EmbeddedBackend::new(
+        display,
+        EmbeddedBackendConfig::default(),
+    ))
+    .map_err(|e| AppError::Display(format!("{e:?}")))
+}
+
+fn main() -> ExitCode {
     #[cfg(all(feature = "hw", not(feature = "sim")))]
-    run_hw()?;
+    let result = run_hw();
 
     #[cfg(feature = "sim")]
-    run_sim();
+    let result = run_sim();
 
-    Ok(())
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("pipulse: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 #[cfg(all(feature = "hw", not(feature = "sim")))]
 fn run_hw() -> Result<(), AppError> {
-    let mut display = display::hw::init()?;
-    let mut cpu = metrics::CpuCollector::new();
-    let (_, iface) = metrics::get_net_info();
-    let mut net = metrics::NetSampler::new(&iface);
+    let mut hw = display::hw::init()?;
+    let mut terminal = new_terminal(&mut hw.display)?;
     let mut buttons = input::ButtonReader::new()?;
-    let mut page = ui::Page::default();
-    let mut rx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
-    let mut tx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
+    let mut app = App::new();
 
     loop {
         // Handle button presses (edge-triggered, active-low)
         match buttons.poll()? {
-            input::ButtonEvent::Next => page = page.next(),
-            input::ButtonEvent::Prev => page = page.prev(),
+            input::ButtonEvent::Next => app.set_page(app.page.next(), &mut terminal)?,
+            input::ButtonEvent::Prev => app.set_page(app.page.prev(), &mut terminal)?,
             input::ButtonEvent::None => {}
         }
 
-        // Update network history ring buffers
-        let (rx, tx) = net.sample();
-        if rx_history.len() >= HISTORY_LEN {
-            rx_history.pop_front();
-        }
-        rx_history.push_back(rx);
-        if tx_history.len() >= HISTORY_LEN {
-            tx_history.pop_front();
-        }
-        tx_history.push_back(tx);
-
-        let (ip, iface) = metrics::get_net_info();
-        let state = ui::AppState {
-            ip,
-            iface,
-            hostname: metrics::get_hostname(),
-            cpu_pct: cpu.sample(),
-            mem_pct: metrics::get_memory_percent(),
-            disk_pct: metrics::get_disk_percent(),
-            temp: metrics::get_cpu_temp(),
-            uptime: metrics::get_uptime_str(),
-            load: metrics::get_loadavg(),
-            page,
-            rx_history: rx_history.clone(),
-            tx_history: tx_history.clone(),
-        };
-
-        {
-            // Terminal is scoped so the mutable borrow of `display` is
-            // released before we draw icons directly onto it.
-            let backend = EmbeddedBackend::new(&mut display, EmbeddedBackendConfig::default());
-            let mut terminal = Terminal::new(backend).unwrap();
-            ui::render(&mut terminal, &state);
-        }
-
-        if state.page == ui::Page::Overview {
-            draw_icons(&mut display, &state);
-        }
+        app.tick(&mut terminal)?;
 
         std::thread::sleep(Duration::from_secs(1));
     }
 }
 
 #[cfg(feature = "sim")]
-fn run_sim() {
-    use embedded_graphics_simulator::SimulatorEvent;
+fn run_sim() -> Result<(), AppError> {
+    use embedded_graphics_simulator::{SimulatorEvent, sdl2::Keycode};
 
     let mut setup = display::sim::init();
-    let mut cpu = metrics::CpuCollector::new();
-    let (_, iface) = metrics::get_net_info();
-    let mut net = metrics::NetSampler::new(&iface);
-    let mut page = ui::Page::default();
-    let mut rx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
-    let mut tx_history: VecDeque<u64> = VecDeque::with_capacity(HISTORY_LEN);
+    let mut terminal = new_terminal(&mut setup.display)?;
+    let mut app = App::new();
 
     loop {
-        // Update network history ring buffers
-        let (rx, tx) = net.sample();
-        if rx_history.len() >= HISTORY_LEN {
-            rx_history.pop_front();
-        }
-        rx_history.push_back(rx);
-        if tx_history.len() >= HISTORY_LEN {
-            tx_history.pop_front();
-        }
-        tx_history.push_back(tx);
-
-        let (ip, iface) = metrics::get_net_info();
-        let state = ui::AppState {
-            ip,
-            iface,
-            hostname: metrics::get_hostname(),
-            cpu_pct: cpu.sample(),
-            mem_pct: metrics::get_memory_percent(),
-            disk_pct: metrics::get_disk_percent(),
-            temp: metrics::get_cpu_temp(),
-            uptime: metrics::get_uptime_str(),
-            load: metrics::get_loadavg(),
-            page,
-            rx_history: rx_history.clone(),
-            tx_history: tx_history.clone(),
-        };
-
-        {
-            let backend =
-                EmbeddedBackend::new(&mut setup.display, EmbeddedBackendConfig::default());
-            let mut terminal = Terminal::new(backend).unwrap();
-            ui::render(&mut terminal, &state);
-        }
-
-        if state.page == ui::Page::Overview {
-            draw_icons(&mut setup.display, &state);
-        }
-
-        setup.window.update(&setup.display);
+        app.tick(&mut terminal)?;
+        setup.window.update(terminal.backend().display());
 
         if cfg!(feature = "ci") {
-            break;
+            return Ok(());
         }
 
-        let mut should_quit = false;
         for event in setup.window.events() {
             match event {
-                SimulatorEvent::Quit => should_quit = true,
-                SimulatorEvent::KeyDown { keycode, .. } => {
-                    use embedded_graphics_simulator::sdl2::Keycode;
-                    match keycode {
-                        Keycode::Right | Keycode::D => page = page.next(),
-                        Keycode::Left | Keycode::A => page = page.prev(),
-                        _ => {}
-                    }
-                }
+                SimulatorEvent::Quit => return Ok(()),
+                SimulatorEvent::KeyDown { keycode, .. } => match keycode {
+                    Keycode::Right | Keycode::D => app.set_page(app.page.next(), &mut terminal)?,
+                    Keycode::Left | Keycode::A => app.set_page(app.page.prev(), &mut terminal)?,
+                    _ => {}
+                },
                 _ => {}
             }
         }
-        if should_quit {
-            break;
-        }
 
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }

@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use ratatui::{
     Frame, Terminal,
     backend::Backend,
@@ -7,6 +6,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Gauge, Paragraph, Sparkline},
 };
+use std::collections::VecDeque;
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Page {
@@ -41,7 +41,7 @@ impl Page {
     }
 }
 
-pub struct AppState {
+pub struct AppState<'a> {
     pub ip: String,
     pub iface: String,
     pub hostname: String,
@@ -52,8 +52,8 @@ pub struct AppState {
     pub uptime: String,
     pub load: String,
     pub page: Page,
-    pub rx_history: VecDeque<u64>,
-    pub tx_history: VecDeque<u64>,
+    pub rx_history: &'a VecDeque<u64>,
+    pub tx_history: &'a VecDeque<u64>,
 }
 
 fn traffic_color(pct: u8, warn: u8, crit: u8) -> Color {
@@ -127,7 +127,7 @@ fn fmt_rate(bps: u64) -> String {
     }
 }
 
-fn render_overview(frame: &mut Frame<'_>, state: &AppState) {
+fn render_overview(frame: &mut Frame<'_>, state: &AppState<'_>) {
     let divider: String = "─".repeat(frame.area().width as usize);
 
     let rows = Layout::default()
@@ -161,8 +161,7 @@ fn render_overview(frame: &mut Frame<'_>, state: &AppState) {
 
     // Leading spaces leave room for the embedded-icon drawn in main.rs
     frame.render_widget(
-        Paragraph::new(format!("    {}", state.ip))
-            .style(Style::default().fg(Color::White)),
+        Paragraph::new(format!("    {}", state.ip)).style(Style::default().fg(Color::White)),
         rows[7],
     );
 
@@ -176,19 +175,17 @@ fn render_overview(frame: &mut Frame<'_>, state: &AppState) {
     );
 
     frame.render_widget(
-        Paragraph::new(format!("    {}", state.uptime))
-            .style(Style::default().fg(Color::Gray)),
+        Paragraph::new(format!("    {}", state.uptime)).style(Style::default().fg(Color::Gray)),
         rows[9],
     );
 
     frame.render_widget(
-        Paragraph::new(format!("    {}", state.load))
-            .style(Style::default().fg(Color::Gray)),
+        Paragraph::new(format!("    {}", state.load)).style(Style::default().fg(Color::Gray)),
         rows[10],
     );
 }
 
-fn render_network(frame: &mut Frame<'_>, state: &AppState) {
+fn render_network(frame: &mut Frame<'_>, state: &AppState<'_>) {
     let divider: String = "─".repeat(frame.area().width as usize);
 
     let rows = Layout::default()
@@ -212,10 +209,8 @@ fn render_network(frame: &mut Frame<'_>, state: &AppState) {
         rows[1],
     );
 
-    let rx_data: Vec<u64> = state.rx_history.iter().copied().collect();
-    let tx_data: Vec<u64> = state.tx_history.iter().copied().collect();
-    let current_rx = rx_data.last().copied().unwrap_or(0);
-    let current_tx = tx_data.last().copied().unwrap_or(0);
+    let current_rx = state.rx_history.back().copied().unwrap_or(0);
+    let current_tx = state.tx_history.back().copied().unwrap_or(0);
 
     frame.render_widget(
         Paragraph::new(format!("Rx  {}", fmt_rate(current_rx)))
@@ -224,7 +219,7 @@ fn render_network(frame: &mut Frame<'_>, state: &AppState) {
     );
     frame.render_widget(
         Sparkline::default()
-            .data(&rx_data)
+            .data(state.rx_history.iter().copied())
             .style(Style::default().fg(Color::Green)),
         rows[3],
     );
@@ -236,17 +231,19 @@ fn render_network(frame: &mut Frame<'_>, state: &AppState) {
     );
     frame.render_widget(
         Sparkline::default()
-            .data(&tx_data)
+            .data(state.tx_history.iter().copied())
             .style(Style::default().fg(Color::Cyan)),
         rows[5],
     );
 }
 
-pub fn render<B: Backend>(terminal: &mut Terminal<B>, state: &AppState) {
-    terminal
-        .draw(|frame| match state.page {
-            Page::Overview => render_overview(frame, state),
-            Page::Network => render_network(frame, state),
-        })
-        .unwrap();
+pub fn render<B: Backend>(
+    terminal: &mut Terminal<B>,
+    state: &AppState<'_>,
+) -> Result<(), B::Error> {
+    terminal.draw(|frame| match state.page {
+        Page::Overview => render_overview(frame, state),
+        Page::Network => render_network(frame, state),
+    })?;
+    Ok(())
 }
