@@ -1,129 +1,166 @@
 use std::time::Instant;
 use sysinfo::{Components, Disks, Networks, System};
 
-pub struct NetSampler {
-    iface: String,
+/// One sample of every metric shown on the display.
+pub struct Snapshot {
+    pub ip: String,
+    pub iface: String,
+    pub hostname: String,
+    pub cpu_pct: u8,
+    pub mem_pct: u8,
+    pub disk_pct: u8,
+    pub temp: Option<f32>,
+    pub uptime: String,
+    pub load: String,
+    /// Receive rate in bytes/sec since the previous sample.
+    pub rx_bps: u64,
+    /// Transmit rate in bytes/sec since the previous sample.
+    pub tx_bps: u64,
+}
+
+/// Long-lived sysinfo handles, refreshed in place on every sample rather than
+/// rebuilt from scratch.
+pub struct Metrics {
+    sys: System,
+    networks: Networks,
+    disks: Disks,
+    components: Components,
+    net_iface: String,
     prev_rx: u64,
     prev_tx: u64,
-    last_sample: Instant,
+    last_net: Instant,
 }
 
-impl NetSampler {
-    pub fn new(iface: &str) -> Self {
-        let (rx, tx) = Self::iface_bytes(iface);
-        Self {
-            iface: iface.to_string(),
-            prev_rx: rx,
-            prev_tx: tx,
-            last_sample: Instant::now(),
-        }
-    }
-
-    fn iface_bytes(iface: &str) -> (u64, u64) {
-        let networks = Networks::new_with_refreshed_list();
-        for (name, data) in &networks {
-            if name == iface {
-                return (data.total_received(), data.total_transmitted());
-            }
-        }
-        (0, 0)
-    }
-
-    /// Returns `(rx_bytes_per_sec, tx_bytes_per_sec)` since last call.
-    pub fn sample(&mut self) -> (u64, u64) {
-        let elapsed = self.last_sample.elapsed().as_secs_f64().max(0.001);
-        let (rx, tx) = Self::iface_bytes(&self.iface);
-        let rx_bps = (rx.saturating_sub(self.prev_rx) as f64 / elapsed) as u64;
-        let tx_bps = (tx.saturating_sub(self.prev_tx) as f64 / elapsed) as u64;
-        self.prev_rx = rx;
-        self.prev_tx = tx;
-        self.last_sample = Instant::now();
-        (rx_bps, tx_bps)
-    }
-}
-
-pub struct CpuCollector {
-    sys: System,
-}
-
-impl CpuCollector {
+impl Metrics {
     pub fn new() -> Self {
         let mut sys = System::new();
         sys.refresh_cpu_usage();
-        Self { sys }
-    }
-
-    pub fn sample(&mut self) -> u8 {
-        self.sys.refresh_cpu_usage();
-        self.sys.global_cpu_usage().min(100.0) as u8
-    }
-}
-
-/// Returns `(ip_address, interface_name)` for the first non-virtual IPv4 interface.
-pub fn get_net_info() -> (String, String) {
-    let networks = Networks::new_with_refreshed_list();
-    for (iface_name, data) in &networks {
-        if iface_name.starts_with("lo")
-            || iface_name.starts_with("docker")
-            || iface_name.starts_with("veth")
-        {
-            continue;
-        }
-        for ip_net in data.ip_networks() {
-            if ip_net.addr.is_ipv4() && !ip_net.addr.is_loopback() {
-                return (ip_net.addr.to_string(), iface_name.clone());
+        let networks = Networks::new_with_refreshed_list();
+        let (net_iface, prev_rx, prev_tx) = match primary_iface(&networks) {
+            Some((name, _)) => {
+                let (rx, tx) = iface_totals(&networks, name);
+                (name.to_string(), rx, tx)
             }
+            None => (String::new(), 0, 0),
+        };
+        Self {
+            sys,
+            networks,
+            disks: Disks::new_with_refreshed_list(),
+            components: Components::new_with_refreshed_list(),
+            net_iface,
+            prev_rx,
+            prev_tx,
+            last_net: Instant::now(),
         }
     }
-    ("no ip".into(), String::new())
+
+    pub fn sample(&mut self) -> Snapshot {
+        self.sys.refresh_cpu_usage();
+        self.sys.refresh_memory();
+        // `true` also picks up interfaces that appeared since the last refresh
+        self.networks.refresh(true);
+        self.components.refresh(false);
+        if let Some(root) = self.disks.list_mut().iter_mut().find(|d| is_root(d)) {
+            root.refresh();
+        }
+
+        let (ip, iface) = match primary_iface(&self.networks) {
+            Some((name, ip)) => (ip, name.to_string()),
+            None => ("no ip".into(), String::new()),
+        };
+        let (rx_bps, tx_bps) = self.net_rates(&iface);
+
+        Snapshot {
+            ip,
+            iface,
+            hostname: System::host_name().unwrap_or_else(|| "?".into()),
+            cpu_pct: self.sys.global_cpu_usage().min(100.0) as u8,
+            mem_pct: percent(self.sys.used_memory(), self.sys.total_memory()),
+            disk_pct: self.disks.iter().find(|d| is_root(d)).map_or(0, |d| {
+                let total = d.total_space();
+                percent(total.saturating_sub(d.available_space()), total)
+            }),
+            temp: self.cpu_temp(),
+            uptime: uptime_str(System::uptime()),
+            load: {
+                let la = System::load_average();
+                format!("{:.2} {:.2} {:.2}", la.one, la.five, la.fifteen)
+            },
+            rx_bps,
+            tx_bps,
+        }
+    }
+
+    /// Returns `(rx_bytes_per_sec, tx_bytes_per_sec)` for `iface` since the
+    /// last call. If the primary interface changed, the baseline is reset and
+    /// this sample reports zero.
+    fn net_rates(&mut self, iface: &str) -> (u64, u64) {
+        let elapsed = self.last_net.elapsed().as_secs_f64().max(0.001);
+        let (rx, tx) = iface_totals(&self.networks, iface);
+        let rates = if iface == self.net_iface {
+            (
+                (rx.saturating_sub(self.prev_rx) as f64 / elapsed) as u64,
+                (tx.saturating_sub(self.prev_tx) as f64 / elapsed) as u64,
+            )
+        } else {
+            self.net_iface = iface.to_string();
+            (0, 0)
+        };
+        self.prev_rx = rx;
+        self.prev_tx = tx;
+        self.last_net = Instant::now();
+        rates
+    }
+
+    fn cpu_temp(&self) -> Option<f32> {
+        if let Some(temp) = self.components.iter().find_map(|c| c.temperature()) {
+            return Some(temp);
+        }
+        // Fallback for Raspberry Pi thermal zone
+        std::fs::read_to_string("/sys/class/thermal/thermal_zone0/temp")
+            .ok()
+            .and_then(|s| s.trim().parse::<i32>().ok())
+            .map(|m| m as f32 / 1000.0)
+    }
 }
 
-pub fn get_loadavg() -> String {
-    let la = System::load_average();
-    format!("{:.2} {:.2} {:.2}", la.one, la.five, la.fifteen)
+/// Returns `(interface_name, ipv4_address)` for the first non-virtual interface
+/// with an IPv4 address. Interfaces are checked in name order so the choice is
+/// stable between samples (e.g. `eth0` is preferred over `wlan0`).
+fn primary_iface(networks: &Networks) -> Option<(&str, String)> {
+    let mut names: Vec<&String> = networks
+        .keys()
+        .filter(|n| !(n.starts_with("lo") || n.starts_with("docker") || n.starts_with("veth")))
+        .collect();
+    names.sort();
+    names.into_iter().find_map(|name| {
+        networks[name]
+            .ip_networks()
+            .iter()
+            .find(|ip| ip.addr.is_ipv4() && !ip.addr.is_loopback())
+            .map(|ip| (name.as_str(), ip.addr.to_string()))
+    })
 }
 
-pub fn get_memory_percent() -> u8 {
-    let mut sys = System::new();
-    sys.refresh_memory();
-    let total = sys.total_memory();
+fn iface_totals(networks: &Networks, iface: &str) -> (u64, u64) {
+    networks
+        .get(iface)
+        .map_or((0, 0), |d| (d.total_received(), d.total_transmitted()))
+}
+
+fn is_root(disk: &sysinfo::Disk) -> bool {
+    disk.mount_point() == std::path::Path::new("/")
+}
+
+fn percent(used: u64, total: u64) -> u8 {
     if total == 0 {
         return 0;
     }
-    let used = sys.used_memory();
     ((used as f64 / total as f64) * 100.0).min(100.0) as u8
 }
 
-pub fn get_cpu_temp() -> Option<f32> {
-    let components = Components::new_with_refreshed_list();
-    if let Some(temp) = components.iter().find_map(|c| c.temperature()) {
-        return Some(temp);
-    }
-    // Fallback for Raspberry Pi thermal zone
-    std::fs::read_to_string("/sys/class/thermal/thermal_zone0/temp")
-        .ok()
-        .and_then(|s| s.trim().parse::<i32>().ok())
-        .map(|m| m as f32 / 1000.0)
-}
-
-pub fn get_disk_percent() -> u8 {
-    let disks = Disks::new_with_refreshed_list();
-    disks
-        .iter()
-        .find(|d| d.mount_point() == std::path::Path::new("/"))
-        .map(|d| {
-            let total = d.total_space();
-            if total == 0 {
-                return 0;
-            }
-            let used = total.saturating_sub(d.available_space());
-            ((used as f64 / total as f64) * 100.0).min(100.0) as u8
-        })
-        .unwrap_or(0)
-}
-
-pub fn get_uptime_str() -> String {
-    let secs = System::uptime();
+fn uptime_str(secs: u64) -> String {
     let days = secs / 86400;
     let hours = (secs % 86400) / 3600;
     let mins = (secs % 3600) / 60;
@@ -134,8 +171,4 @@ pub fn get_uptime_str() -> String {
     } else {
         format!("{mins}m")
     }
-}
-
-pub fn get_hostname() -> String {
-    System::host_name().unwrap_or_else(|| "?".into())
 }
