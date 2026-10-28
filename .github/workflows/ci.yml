@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: -D warnings
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-lint-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-lint-
+
+      - name: Install SDL2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy (hw)
+        run: cargo clippy
+
+      - name: Clippy (sim)
+        run: cargo clippy --no-default-features --features sim
+
+      - name: Clippy (sim, ci)
+        run: cargo clippy --no-default-features --features sim,ci

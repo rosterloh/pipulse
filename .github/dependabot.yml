@@ -4,7 +4,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # One PR per week instead of one per crate, so updates don't conflict
+    groups:
+      cargo:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
