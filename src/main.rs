@@ -39,7 +39,7 @@ const TICK: Duration = Duration::from_secs(1);
 /// missed and page changes show immediately.
 const POLL: Duration = Duration::from_millis(20);
 
-/// Number of network samples kept in history for the sparkline graphs.
+/// Number of samples kept in history for the sparkline graphs.
 const HISTORY_LEN: usize = 40;
 
 /// Draw embedded-icon MDI icons beside the Overview info rows
@@ -128,6 +128,7 @@ impl Source {
 struct App {
     source: Source,
     page: ui::Page,
+    cpu_history: VecDeque<u64>,
     rx_history: VecDeque<u64>,
     tx_history: VecDeque<u64>,
 }
@@ -137,12 +138,13 @@ impl App {
         Self {
             source: Source::Live(Box::new(metrics::Metrics::new())),
             page: ui::Page::default(),
+            cpu_history: VecDeque::with_capacity(HISTORY_LEN),
             rx_history: VecDeque::with_capacity(HISTORY_LEN),
             tx_history: VecDeque::with_capacity(HISTORY_LEN),
         }
     }
 
-    /// An `App` showing fixed sample data, with the network history already
+    /// An `App` showing fixed sample data, with the histories already
     /// full so the first frame looks like a long-running device.
     #[cfg(feature = "sim")]
     fn demo() -> Self {
@@ -152,6 +154,7 @@ impl App {
             let (rx, tx) = metrics::Demo::rates(HISTORY_LEN + i);
             push_bounded(&mut app.rx_history, rx);
             push_bounded(&mut app.tx_history, tx);
+            push_bounded(&mut app.cpu_history, metrics::Demo::cpu(i));
         }
         app
     }
@@ -165,12 +168,14 @@ impl App {
         D: DrawTarget<Color = Rgb565> + 'static,
     {
         let m = self.source.sample();
+        push_bounded(&mut self.cpu_history, m.cpu_pct.into());
         push_bounded(&mut self.rx_history, m.rx_bps);
         push_bounded(&mut self.tx_history, m.tx_bps);
 
         let state = ui::AppState {
             snap: m,
             page: self.page,
+            cpu_history: &self.cpu_history,
             rx_history: &self.rx_history,
             tx_history: &self.tx_history,
         };

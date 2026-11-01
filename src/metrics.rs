@@ -8,6 +8,8 @@ pub struct Snapshot {
     pub hostname: String,
     pub cpu_pct: u8,
     pub mem_pct: u8,
+    /// Used RAM in bytes.
+    pub mem_used: u64,
     pub disk_pct: u8,
     pub temp: Option<f32>,
     pub uptime: String,
@@ -88,6 +90,7 @@ impl Metrics {
             hostname: System::host_name().unwrap_or_else(|| "?".into()),
             cpu_pct: self.sys.global_cpu_usage().min(100.0) as u8,
             mem_pct: percent(self.sys.used_memory(), self.sys.total_memory()),
+            mem_used: self.sys.used_memory(),
             disk_pct: self.disks.iter().find(|d| is_root(d)).map_or(0, |d| {
                 let total = d.total_space();
                 percent(total.saturating_sub(d.available_space()), total)
@@ -209,6 +212,11 @@ impl Demo {
         (rx as u64, tx as u64)
     }
 
+    /// CPU % for tick `i`, wandering around the fixed `cpu_pct` of 37.
+    pub fn cpu(i: usize) -> u64 {
+        (37.0 + 25.0 * (i as f64 / 4.0).sin() * (i as f64 / 11.0).cos()) as u64
+    }
+
     pub fn sample(&mut self) -> Snapshot {
         let (rx_bps, tx_bps) = Self::rates(self.tick);
         self.tick += 1;
@@ -218,6 +226,7 @@ impl Demo {
             hostname: "pipulse".into(),
             cpu_pct: 37,
             mem_pct: 61,
+            mem_used: 2_620_000_000,
             disk_pct: 28,
             temp: Some(52.3),
             uptime: "2d 4h 12m".into(),
