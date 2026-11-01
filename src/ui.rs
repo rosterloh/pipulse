@@ -45,6 +45,7 @@ impl Page {
 pub struct AppState<'a> {
     pub snap: Snapshot,
     pub page: Page,
+    pub cpu_history: &'a VecDeque<u64>,
     pub rx_history: &'a VecDeque<u64>,
     pub tx_history: &'a VecDeque<u64>,
 }
@@ -61,7 +62,7 @@ const RULE: Color = Color::Rgb(60, 60, 60);
 
 /// First text row of the Overview info rows (IP, temp, uptime, load), each two
 /// rows tall. main.rs draws the icons there.
-pub const OVERVIEW_ICON_ROW: i32 = 8;
+pub const OVERVIEW_ICON_ROW: i32 = 10;
 
 /// Leading spaces on the Overview info rows, leaving room for the icons that
 /// main.rs draws over them.
@@ -107,11 +108,26 @@ fn dim(text: impl Into<String>) -> Span<'static> {
     Span::styled(text.into(), Style::default().fg(DIM))
 }
 
-fn render_gauge_row(frame: &mut Frame<'_>, area: Rect, label: &str, pct: u8, warn: u8, crit: u8) {
+/// Width of the label + percentage column on the left of each gauge row.
+const GAUGE_LABEL_W: u16 = 9;
+
+/// Gauge row with `suffix` (may be empty) shown after the bar.
+fn render_gauge_row(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    label: &str,
+    pct: u8,
+    (warn, crit): (u8, u8),
+    suffix: &str,
+) {
     let color = traffic_color(pct, warn, crit);
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(9), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(GAUGE_LABEL_W),
+            Constraint::Min(0),
+            Constraint::Length(suffix.chars().count() as u16),
+        ])
         .split(area);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -127,6 +143,16 @@ fn render_gauge_row(frame: &mut Frame<'_>, area: Rect, label: &str, pct: u8, war
             .label(""),
         cols[1],
     );
+    frame.render_widget(Paragraph::new(dim(suffix)), cols[2]);
+}
+
+/// The newest `width` samples: `Sparkline` draws from the start of its data
+/// and drops whatever doesn't fit, which would hide the latest samples.
+fn latest(history: &VecDeque<u64>, width: u16) -> impl Iterator<Item = u64> + '_ {
+    history
+        .iter()
+        .copied()
+        .skip(history.len().saturating_sub(width as usize))
 }
 
 /// Header line: bold title on the left, then the clock and one dot per page.
@@ -182,32 +208,48 @@ fn fmt_bytes(bytes: u64) -> String {
 
 fn render_overview(frame: &mut Frame<'_>, state: &AppState<'_>) {
     let m = &state.snap;
-    // Rows 8-11 (`OVERVIEW_ICON_ROW`) are two text rows tall to fit the icons.
+    // Rows 10-17 (`OVERVIEW_ICON_ROW`) are two text rows tall to fit the icons.
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // [0] header
             Constraint::Length(1), // [1] gap
             Constraint::Length(1), // [2] CPU
-            Constraint::Length(1), // [3] gap
-            Constraint::Length(1), // [4] Mem
-            Constraint::Length(1), // [5] gap
-            Constraint::Length(1), // [6] Disk
-            Constraint::Length(1), // [7] rule
-            Constraint::Length(2), // [8] IP
-            Constraint::Length(2), // [9] Temp
-            Constraint::Length(2), // [10] Uptime
-            Constraint::Length(2), // [11] Load
+            Constraint::Length(2), // [3] CPU history
+            Constraint::Length(1), // [4] gap
+            Constraint::Length(1), // [5] Mem
+            Constraint::Length(1), // [6] gap
+            Constraint::Length(1), // [7] Disk
+            Constraint::Length(1), // [8] rule
+            Constraint::Length(2), // [9] IP
+            Constraint::Length(2), // [10] Temp
+            Constraint::Length(2), // [11] Uptime
+            Constraint::Length(2), // [12] Load
             Constraint::Min(0),
         ])
         .split(frame.area());
 
     render_header(frame, rows[0], &m.hostname, &m.time, state.page);
 
-    render_gauge_row(frame, rows[2], "CPU", m.cpu_pct, 50, 80);
-    render_gauge_row(frame, rows[4], "Mem", m.mem_pct, 60, 85);
-    render_gauge_row(frame, rows[6], "Dsk", m.disk_pct, 70, 90);
-    render_rule(frame, rows[7]);
+    const CPU_LEVELS: (u8, u8) = (50, 80);
+    render_gauge_row(frame, rows[2], "CPU", m.cpu_pct, CPU_LEVELS, "");
+    // Under the gauge bar, scaled 0-100% so its height matches the gauge.
+    let spark = Rect {
+        x: rows[3].x + GAUGE_LABEL_W,
+        width: rows[3].width.saturating_sub(GAUGE_LABEL_W),
+        ..rows[3]
+    };
+    frame.render_widget(
+        Sparkline::default()
+            .data(latest(state.cpu_history, spark.width))
+            .max(100)
+            .style(Style::default().fg(traffic_color(m.cpu_pct, CPU_LEVELS.0, CPU_LEVELS.1))),
+        spark,
+    );
+    let mem_gb = format!(" {:.1}G", m.mem_used as f64 / (1u64 << 30) as f64);
+    render_gauge_row(frame, rows[5], "Mem", m.mem_pct, (60, 85), &mem_gb);
+    render_gauge_row(frame, rows[7], "Dsk", m.disk_pct, (70, 90), "");
+    render_rule(frame, rows[8]);
 
     let label = |l: &str| dim(format!("{ICON_PAD}{l:<5}"));
 
@@ -216,7 +258,7 @@ fn render_overview(frame: &mut Frame<'_>, state: &AppState<'_>) {
             Span::raw(ICON_PAD),
             Span::styled(m.ip.clone(), bold(Color::White)),
         ])),
-        rows[8],
+        rows[9],
     );
 
     let temp = match m.temp {
@@ -225,7 +267,7 @@ fn render_overview(frame: &mut Frame<'_>, state: &AppState<'_>) {
     };
     frame.render_widget(
         Paragraph::new(Line::from(vec![label("temp"), temp])),
-        rows[9],
+        rows[10],
     );
 
     frame.render_widget(
@@ -233,7 +275,7 @@ fn render_overview(frame: &mut Frame<'_>, state: &AppState<'_>) {
             label("up"),
             Span::styled(m.uptime.clone(), Style::default().fg(Color::White)),
         ])),
-        rows[10],
+        rows[11],
     );
 
     let [one, five, fifteen] = m.load;
@@ -243,7 +285,7 @@ fn render_overview(frame: &mut Frame<'_>, state: &AppState<'_>) {
             Span::styled(format!("{one:.2}"), bold(load_color(one, m.cores))),
             dim(format!(" {five:.2} {fifteen:.2}")),
         ])),
-        rows[11],
+        rows[12],
     );
 }
 
@@ -306,7 +348,7 @@ fn render_network(frame: &mut Frame<'_>, state: &AppState<'_>) {
         frame.render_widget(Paragraph::new(dim(peak_text)), cols[1]);
         frame.render_widget(
             Sparkline::default()
-                .data(history.iter().copied())
+                .data(latest(history, spark_row.width))
                 .style(Style::default().fg(color)),
             spark_row,
         );
